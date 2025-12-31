@@ -9,6 +9,8 @@ export interface ITransaction extends Document {
     afterBalance: number;
     referenceId: string;
     description?: string;
+    receiptUrl?: string;
+    status: 'PENDING' | 'COMPLETED' | 'FAILED';
     initiatedBy: mongoose.Types.ObjectId;
     source: 'SYSTEM' | 'ADMIN' | 'USER';
     createdAt: Date;
@@ -29,6 +31,12 @@ const TransactionSchema: Schema = new Schema(
         afterBalance: { type: Number, required: true },
         referenceId: { type: String, required: true, unique: true, index: true },
         description: { type: String },
+        receiptUrl: { type: String },
+        status: {
+            type: String,
+            enum: ['PENDING', 'COMPLETED', 'FAILED'],
+            default: 'COMPLETED',
+        },
         initiatedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
         source: {
             type: String,

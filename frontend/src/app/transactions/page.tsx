@@ -1,16 +1,70 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, Button } from '@/components/ui';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import { Search, Filter, Download } from 'lucide-react';
+import { Search, Download, Check, X, Clock, Eye, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
+import api from '@/lib/api';
+import { cn } from '@/components/ui';
 
 export default function TransactionsPage() {
-    const [transactions] = useState([
-        { id: 'TX-12345', date: '2025-12-28', type: 'CREDIT', amount: 5000, balance: 125430, source: 'ADMIN', ref: 'Manual Adjustment' },
-        { id: 'TX-12344', date: '2025-12-27', type: 'DEBIT', amount: 1200, balance: 120430, source: 'USER', ref: 'Service Purchase' },
-        { id: 'TX-12343', date: '2025-12-27', type: 'CREDIT', amount: 3000, balance: 121630, source: 'SYSTEM', ref: 'Referral Bonus' },
-    ]);
+    const [transactions, setTransactions] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [userRole, setUserRole] = useState<string | null>(null);
+    const [filter, setFilter] = useState<'ALL' | 'CREDIT' | 'DEBIT'>('ALL');
+    const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'COMPLETED' | 'FAILED'>('ALL');
+
+    useEffect(() => {
+        const storedUser = localStorage.getItem('user');
+        if (storedUser) {
+            setUserRole(JSON.parse(storedUser).role);
+        }
+        fetchTransactions();
+    }, []);
+
+    const fetchTransactions = async () => {
+        try {
+            const resp = await api.get('/transactions');
+            setTransactions(resp.data.data);
+        } catch (error) {
+            console.error('Failed to fetch transactions', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleAction = async (transaction: any, action: 'APPROVE' | 'REJECT') => {
+        if (!confirm(`Are you sure you want to ${action.toLowerCase()} this ${transaction.type === 'CREDIT' ? 'deposit' : 'withdrawal'}?`)) return;
+
+        try {
+            // Use different endpoint based on transaction type
+            const endpoint = transaction.type === 'CREDIT'
+                ? '/wallet/admin/deposit-action'
+                : '/wallet/admin/withdrawal-action';
+
+            await api.post(endpoint, { transactionId: transaction._id, action });
+            alert(`${transaction.type === 'CREDIT' ? 'Deposit' : 'Withdrawal'} ${action.toLowerCase()}d successfully`);
+            fetchTransactions();
+        } catch (error: any) {
+            alert(error.response?.data?.message || 'Action failed');
+        }
+    };
+
+    const filteredTransactions = transactions.filter(tx => {
+        if (filter !== 'ALL' && tx.type !== filter) return false;
+        if (statusFilter !== 'ALL' && tx.status !== statusFilter) return false;
+        return true;
+    });
+
+    const formatDate = (dateStr: string) => {
+        return new Date(dateStr).toLocaleString('en-IN', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+        });
+    };
 
     return (
         <DashboardLayout>
@@ -32,12 +86,25 @@ export default function TransactionsPage() {
                             />
                         </div>
                         <div className="flex gap-2">
-                            <Button variant="outline" className="gap-2 text-sm py-1.5 h-auto">
-                                <Filter className="w-4 h-4" /> Type
-                            </Button>
-                            <Button variant="outline" className="gap-2 text-sm py-1.5 h-auto">
-                                <Filter className="w-4 h-4" /> Date Range
-                            </Button>
+                            <select
+                                className="px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-900 dark:text-white outline-none"
+                                value={filter}
+                                onChange={(e) => setFilter(e.target.value as any)}
+                            >
+                                <option value="ALL">All Types</option>
+                                <option value="CREDIT">Deposits</option>
+                                <option value="DEBIT">Withdrawals</option>
+                            </select>
+                            <select
+                                className="px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-900 dark:text-white outline-none"
+                                value={statusFilter}
+                                onChange={(e) => setStatusFilter(e.target.value as any)}
+                            >
+                                <option value="ALL">All Status</option>
+                                <option value="PENDING">Pending</option>
+                                <option value="COMPLETED">Completed</option>
+                                <option value="FAILED">Failed</option>
+                            </select>
                         </div>
                     </div>
 
@@ -46,52 +113,102 @@ export default function TransactionsPage() {
                             <thead>
                                 <tr className="bg-gray-50 dark:bg-gray-800/50 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                                     <th className="px-6 py-4">Transaction ID</th>
-                                    <th className="px-6 py-4">Date</th>
+                                    <th className="px-6 py-4">User</th>
+                                    <th className="px-6 py-4">Status</th>
                                     <th className="px-6 py-4">Type</th>
                                     <th className="px-6 py-4">Amount</th>
-                                    <th className="px-6 py-4">After Balance</th>
-                                    <th className="px-6 py-4">Source</th>
-                                    <th className="px-6 py-4">Reference</th>
+                                    <th className="px-6 py-4">Date</th>
+                                    <th className="px-6 py-4">Description</th>
+                                    {(userRole === 'ADMIN' || userRole === 'MANAGER') && <th className="px-6 py-4 text-center">Actions</th>}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                                {transactions.map((tx) => (
-                                    <tr key={tx.id} className="text-sm dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
-                                        <td className="px-6 py-4 font-mono font-medium">{tx.id}</td>
-                                        <td className="px-6 py-4">{tx.date}</td>
+                                {loading ? (
+                                    <tr><td colSpan={8} className="px-6 py-10 text-center text-gray-500">Loading transactions...</td></tr>
+                                ) : filteredTransactions.length === 0 ? (
+                                    <tr><td colSpan={8} className="px-6 py-10 text-center text-gray-500">No transactions found</td></tr>
+                                ) : filteredTransactions.map((tx) => (
+                                    <tr key={tx._id} className="text-sm dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
+                                        <td className="px-6 py-4">
+                                            <span className="font-mono font-medium text-xs">{tx.referenceId}</span>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center text-blue-600 font-bold text-[10px]">
+                                                    {tx.userId?.name?.[0] || '?'}
+                                                </div>
+                                                <span className="text-xs">{tx.userId?.name || 'Unknown'}</span>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <div className={cn(
+                                                "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider shadow-sm",
+                                                tx.status === 'COMPLETED' ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" :
+                                                    tx.status === 'PENDING' ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 animate-pulse" :
+                                                        "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                                            )}>
+                                                {tx.status === 'PENDING' && <Clock className="w-3 h-3" />}
+                                                {tx.status}
+                                            </div>
+                                        </td>
                                         <td className="px-6 py-4">
                                             <span className={cn(
-                                                "px-2 py-1 rounded text-[10px] font-bold",
-                                                tx.type === 'CREDIT' ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                                                "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold",
+                                                tx.type === 'CREDIT' ? "text-green-600 bg-green-50 dark:bg-green-600/10" : "text-red-600 bg-red-50 dark:bg-red-600/10"
                                             )}>
-                                                {tx.type}
+                                                {tx.type === 'CREDIT' ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownLeft className="w-3 h-3" />}
+                                                {tx.type === 'CREDIT' ? 'DEPOSIT' : 'WITHDRAW'}
                                             </span>
                                         </td>
                                         <td className={cn("px-6 py-4 font-bold", tx.type === 'CREDIT' ? "text-green-600" : "text-red-600")}>
                                             {tx.type === 'CREDIT' ? '+' : '-'}₹{tx.amount.toLocaleString()}
                                         </td>
-                                        <td className="px-6 py-4 font-medium">₹{tx.balance.toLocaleString()}</td>
-                                        <td className="px-6 py-4 text-xs font-semibold">{tx.source}</td>
-                                        <td className="px-6 py-4 text-gray-500 dark:text-gray-400 truncate max-w-[150px]">{tx.ref}</td>
+                                        <td className="px-6 py-4 text-xs text-gray-500">
+                                            {formatDate(tx.createdAt)}
+                                        </td>
+                                        <td className="px-6 py-4 text-xs font-medium text-gray-500 truncate max-w-[200px]">{tx.description}</td>
+                                        {(userRole === 'ADMIN' || userRole === 'MANAGER') && (
+                                            <td className="px-6 py-4">
+                                                {tx.status === 'PENDING' ? (
+                                                    <div className="flex items-center justify-center gap-2">
+                                                        {tx.receiptUrl && (
+                                                            <a
+                                                                href={tx.receiptUrl}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="p-1.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-all"
+                                                                title="View Receipt"
+                                                            >
+                                                                <Eye className="w-4 h-4" />
+                                                            </a>
+                                                        )}
+                                                        <button
+                                                            onClick={() => handleAction(tx, 'APPROVE')}
+                                                            className="p-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-sm transition-all"
+                                                            title="Approve"
+                                                        >
+                                                            <Check className="w-4 h-4" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleAction(tx, 'REJECT')}
+                                                            className="p-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 shadow-sm transition-all"
+                                                            title="Reject"
+                                                        >
+                                                            <X className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-center text-xs text-gray-400 italic">—</div>
+                                                )}
+                                            </td>
+                                        )}
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
-                    </div>
-
-                    <div className="p-4 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between text-sm">
-                        <span className="text-gray-500">Showing 1 to 3 of 120 results</span>
-                        <div className="flex gap-2">
-                            <Button variant="outline" className="px-3 py-1 h-auto" disabled>Previous</Button>
-                            <Button variant="outline" className="px-3 py-1 h-auto text-blue-600 border-blue-600">1</Button>
-                            <Button variant="outline" className="px-3 py-1 h-auto">2</Button>
-                            <Button variant="outline" className="px-3 py-1 h-auto">Next</Button>
-                        </div>
                     </div>
                 </Card>
             </div>
         </DashboardLayout>
     );
 }
-
-import { cn } from '@/components/ui';
