@@ -175,7 +175,10 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                     </div>
                 </header>
 
-                <main className="flex-1 overflow-y-auto p-4 lg:p-8">
+                <main className={cn(
+                    "flex-1 relative",
+                    pathname === '/chat' ? "overflow-hidden" : "overflow-y-auto p-4 lg:p-8"
+                )}>
                     {sidebarOpen && (
                         <div
                             className="fixed inset-0 bg-black/50 z-40 lg:hidden backdrop-blur-sm"
