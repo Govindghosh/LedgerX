@@ -86,10 +86,29 @@ export default function WalletsPage() {
         proofType: '' as '' | 'PASSBOOK' | 'CHECKBOOK' | 'UPI_SCREENSHOT' | 'BANK_STATEMENT',
     });
     const [proofFile, setProofFile] = useState<File | null>(null);
+    const [chartData, setChartData] = useState<any>({
+        labels: [],
+        datasets: []
+    });
 
     useEffect(() => {
         fetchMyWallet();
         fetchBeneficiaries();
+
+        // Generate mock chart data only on client
+        setChartData({
+            labels: Array.from({ length: 30 }, (_, i) => `Day ${i + 1}`),
+            datasets: [
+                {
+                    fill: true,
+                    label: 'Net Revenue',
+                    data: Array.from({ length: 30 }, () => Math.floor(Math.random() * 10000) + 5000),
+                    borderColor: 'rgb(37, 99, 235)',
+                    backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                    tension: 0.4,
+                },
+            ],
+        });
     }, []);
 
     const fetchMyWallet = async () => {
@@ -225,20 +244,6 @@ export default function WalletsPage() {
         } catch (error: any) {
             alert(error.response?.data?.message || 'Failed to delete beneficiary');
         }
-    };
-
-    const chartData = {
-        labels: Array.from({ length: 30 }, (_, i) => `Day ${i + 1}`),
-        datasets: [
-            {
-                fill: true,
-                label: 'Net Revenue',
-                data: Array.from({ length: 30 }, () => Math.floor(Math.random() * 10000) + 5000),
-                borderColor: 'rgb(37, 99, 235)',
-                backgroundColor: 'rgba(37, 99, 235, 0.1)',
-                tension: 0.4,
-            },
-        ],
     };
 
     const chartOptions = {

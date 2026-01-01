@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react';
 import { io, Socket } from 'socket.io-client';
 
 interface SocketContextType {
@@ -25,55 +25,155 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     const [socket, setSocket] = useState<Socket | null>(null);
     const [isConnected, setIsConnected] = useState(false);
     const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
+    const socketRef = useRef<Socket | null>(null);
+    const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     useEffect(() => {
-        const token = localStorage.getItem('accessToken');
+        const connectSocket = () => {
+            const token = localStorage.getItem('accessToken');
 
-        if (!token) {
-            console.log('No token found, skipping socket connection');
-            return;
-        }
+            if (!token) {
+                console.log('⚠️ No token found, skipping socket connection');
+                setIsConnected(false);
+                return;
+            }
 
-        const socketInstance = io(process.env.NEXT_PUBLIC_API_URL?.replace('/api/v1', '') || 'http://localhost:5000', {
-            auth: { token },
-            transports: ['websocket', 'polling'],
-            reconnection: true,
-            reconnectionAttempts: 5,
-            reconnectionDelay: 1000,
-        });
+            // Avoid creating multiple socket instances if one is already connecting/connected
+            if (socketRef.current?.connected) {
+                console.log('♻️ Socket already connected');
+                setIsConnected(true);
+                return;
+            }
 
-        socketInstance.on('connect', () => {
-            console.log('🔌 Socket connected:', socketInstance.id);
-            setIsConnected(true);
-        });
+            if (socketRef.current) {
+                console.log('♻️ Closing existing socket before reconnecting...');
+                socketRef.current.disconnect();
+                socketRef.current = null;
+            }
 
-        socketInstance.on('disconnect', (reason) => {
-            console.log('🔌 Socket disconnected:', reason);
-            setIsConnected(false);
-        });
+            console.log('🔌 Initializing socket connection...');
+            const socketUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api/v1', '') || 'http://localhost:5000';
+            console.log('📡 Connecting to:', socketUrl);
 
-        socketInstance.on('connect_error', (error) => {
-            console.error('🔌 Socket connection error:', error.message);
-            setIsConnected(false);
-        });
+            const socketInstance = io(socketUrl, {
+                auth: { token },
+                transports: ['websocket', 'polling'],
+                reconnection: true,
+                reconnectionAttempts: 20,
+                reconnectionDelay: 1000,
+                reconnectionDelayMax: 5000,
+                timeout: 20000,
+                autoConnect: true,
+                forceNew: true // Ensure a new connection
+            });
 
-        // Track online users
-        socketInstance.on('user:online', ({ userId }: { userId: string }) => {
-            setOnlineUsers(prev => [...new Set([...prev, userId])]);
-        });
+            socketRef.current = socketInstance;
+            setSocket(socketInstance);
 
-        socketInstance.on('user:offline', ({ userId }: { userId: string }) => {
-            setOnlineUsers(prev => prev.filter(id => id !== userId));
-        });
+            // Connection successful
+            socketInstance.on('connect', () => {
+                console.log('✅ Socket connected successfully! ID:', socketInstance.id);
+                setIsConnected(true);
+                if (reconnectTimeoutRef.current) {
+                    clearTimeout(reconnectTimeoutRef.current);
+                    reconnectTimeoutRef.current = null;
+                }
+            });
 
-        setSocket(socketInstance);
+            // Disconnection handler
+            socketInstance.on('disconnect', (reason) => {
+                console.log('❌ Socket disconnected. Reason:', reason);
+                setIsConnected(false);
 
+                // Handle different disconnect reasons
+                if (reason === 'io server disconnect') {
+                    // Server initiated disconnect, reconnect manually
+                    console.log('🔄 Server disconnected, attempting manual reconnect...');
+                    reconnectTimeoutRef.current = setTimeout(() => {
+                        socketInstance.connect();
+                    }, 2000);
+                }
+            });
+
+            // Connection error handler
+            socketInstance.on('connect_error', (error) => {
+                console.error('🚨 Socket connection error:', error.message);
+                console.error('Error details:', {
+                    message: error.message,
+                    description: error.toString(),
+                    auth: error.message.includes('Authentication') || error.message.includes('token')
+                });
+                setIsConnected(false);
+            });
+
+            // Reconnection attempt handler
+            socketInstance.on('reconnect_attempt', (attemptNumber) => {
+                console.log(`🔄 Reconnection attempt #${attemptNumber}...`);
+            });
+
+            // Reconnection failed handler
+            socketInstance.on('reconnect_failed', () => {
+                console.error('🚨 All reconnection attempts failed');
+                setIsConnected(false);
+            });
+
+            // Successful reconnection
+            socketInstance.on('reconnect', (attemptNumber) => {
+                console.log(`✅ Socket reconnected successfully after ${attemptNumber} attempts`);
+                setIsConnected(true);
+            });
+
+            // Authentication error
+            socketInstance.on('error', (error) => {
+                console.error('🚨 Socket error:', error);
+            });
+
+            // Track online users
+            socketInstance.on('user:online', ({ userId }: { userId: string }) => {
+                console.log('👤 User came online:', userId);
+                setOnlineUsers(prev => [...new Set([...prev, userId])]);
+            });
+
+            socketInstance.on('user:offline', ({ userId }: { userId: string }) => {
+                console.log('👤 User went offline:', userId);
+                setOnlineUsers(prev => prev.filter(id => id !== userId));
+            });
+
+            // Get initial list of online users
+            socketInstance.on('users:online', ({ userIds }: { userIds: string[] }) => {
+                console.log('👥 Received online users list:', userIds.length, 'users');
+                setOnlineUsers(userIds);
+            });
+        };
+
+        connectSocket();
+
+        // Check for token and initialize if needed on a short interval 
+        // in case token is set after initial mount
+        const tokenCheckInterval = setInterval(() => {
+            if (!socketRef.current && localStorage.getItem('accessToken')) {
+                console.log('🔄 Token found after mount, initializing socket...');
+                connectSocket();
+            }
+        }, 5000);
+
+        // Cleanup function
         return () => {
-            socketInstance.disconnect();
+            console.log('🧹 Cleaning up socket connection...');
+            clearInterval(tokenCheckInterval);
+            if (reconnectTimeoutRef.current) {
+                clearTimeout(reconnectTimeoutRef.current);
+            }
+            if (socketRef.current) {
+                socketRef.current.removeAllListeners();
+                socketRef.current.disconnect();
+                socketRef.current = null;
+            }
             setSocket(null);
             setIsConnected(false);
+            setOnlineUsers([]);
         };
-    }, []);
+    }, []); // Only run once on mount
 
     return (
         <SocketContext.Provider value={{ socket, isConnected, onlineUsers }}>

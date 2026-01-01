@@ -18,6 +18,7 @@ export interface IChatRoom extends Document {
         isEncrypted: boolean;
         maxMembers: number;
     };
+    pinnedMessages: mongoose.Types.ObjectId[];
     createdAt: Date;
     updatedAt: Date;
 }
@@ -71,6 +72,10 @@ const chatRoomSchema = new Schema<IChatRoom>(
             isEncrypted: { type: Boolean, default: false },
             maxMembers: { type: Number, default: 100 },
         },
+        pinnedMessages: [{
+            type: Schema.Types.ObjectId,
+            ref: 'Message'
+        }],
     },
     {
         timestamps: true,

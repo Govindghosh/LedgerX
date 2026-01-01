@@ -10,7 +10,7 @@ interface AuthenticatedSocket extends Socket {
 }
 
 interface OnlineUser {
-    oderId: string;
+    userId: string;
     socketId: string;
     role: string;
     connectedAt: Date;
@@ -29,16 +29,26 @@ class SocketService {
             try {
                 const token = socket.handshake.auth.token || socket.handshake.headers.authorization?.split(' ')[1];
 
+                console.log('🔐 Socket authentication attempt from:', socket.handshake.address);
+
                 if (!token) {
+                    console.error('❌ No token provided in socket handshake');
                     return next(new Error('Authentication required'));
                 }
 
-                const decoded = jwt.verify(token, config.JWT_SECRET) as { userId: string; role: string };
-                socket.userId = decoded.userId;
-                socket.userRole = decoded.role;
-                next();
+                try {
+                    const decoded = jwt.verify(token, config.JWT_SECRET) as { userId: string; role: string };
+                    socket.userId = decoded.userId;
+                    socket.userRole = decoded.role;
+                    console.log(`✅ Socket authenticated for user: ${decoded.userId} (${decoded.role})`);
+                    next();
+                } catch (jwtError) {
+                    console.error('❌ JWT Verification failed:', jwtError instanceof Error ? jwtError.message : jwtError);
+                    return next(new Error('Invalid token'));
+                }
             } catch (error) {
-                next(new Error('Invalid token'));
+                console.error('❌ Socket auth middleware error:', error instanceof Error ? error.message : error);
+                next(new Error('Internal server error'));
             }
         });
 
@@ -49,7 +59,7 @@ class SocketService {
             // Track online user
             if (socket.userId) {
                 this.onlineUsers.set(socket.userId, {
-                    oderId: socket.userId,
+                    userId: socket.userId,
                     socketId: socket.id,
                     role: socket.userRole || 'USER',
                     connectedAt: new Date(),
@@ -58,8 +68,11 @@ class SocketService {
                 // Join personal room for direct messages
                 socket.join(`user:${socket.userId}`);
 
-                // Broadcast online status
-                this.io?.emit('user:online', { userId: socket.userId });
+                // Send list of currently online users to the new connection
+                socket.emit('users:online', { userIds: this.getOnlineUsers() });
+
+                // Broadcast online status to others
+                socket.broadcast.emit('user:online', { userId: socket.userId });
             }
 
             // Handle joining chat rooms
@@ -77,7 +90,7 @@ class SocketService {
             // Handle typing indicator
             socket.on('chat:typing', ({ roomId, isTyping }: { roomId: string; isTyping: boolean }) => {
                 socket.to(`chat:${roomId}`).emit('chat:typing', {
-                    oderId: socket.userId,
+                    userId: socket.userId,
                     isTyping,
                 });
             });
@@ -139,9 +152,9 @@ class SocketService {
     // Broadcast to admins only
     broadcastToAdmins(event: string, data: any): void {
         if (this.io) {
-            this.onlineUsers.forEach((user, oderId) => {
+            this.onlineUsers.forEach((user, userId) => {
                 if (user.role === 'ADMIN' || user.role === 'MANAGER') {
-                    this.io?.to(`user:${oderId}`).emit(event, data);
+                    this.io?.to(`user:${userId}`).emit(event, data);
                 }
             });
         }

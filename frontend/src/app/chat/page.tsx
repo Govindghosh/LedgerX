@@ -27,8 +27,15 @@ import {
     Edit3,
     Trash2,
     Reply,
-    Copy
+    Copy,
+    FileIcon,
+    Download,
+    Pin,
+    Forward,
+    Share2
 } from 'lucide-react';
+import EmojiPicker, { Theme as EmojiTheme } from 'emoji-picker-react';
+import { useTheme } from 'next-themes';
 
 interface ChatUser {
     _id: string;
@@ -48,13 +55,19 @@ export default function ChatPage() {
         unreadCounts,
         setActiveRoom,
         sendMessage,
+        deleteMessage,
+        uploadFile,
         createDirectChat,
         createGroupChat,
         setTyping,
         fetchAvailableUsers,
+        pinMessage,
+        unpinMessage,
+        forwardMessage,
     } = useChat();
 
     const { isConnected, onlineUsers } = useSocket();
+    const { theme } = useTheme();
 
     const [messageInput, setMessageInput] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
@@ -66,9 +79,20 @@ export default function ChatPage() {
     const [groupDescription, setGroupDescription] = useState('');
     const [isMobileView, setIsMobileView] = useState(false);
     const [showMobileSidebar, setShowMobileSidebar] = useState(true);
+    const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
+    const [pendingAttachment, setPendingAttachment] = useState<any>(null);
+    const [replyingTo, setReplyingTo] = useState<any>(null);
+    const [showForwardModal, setShowForwardModal] = useState(false);
+    const [messageToForward, setMessageToForward] = useState<any>(null);
+    const [showRoomMenu, setShowRoomMenu] = useState(false);
+    const [messageMenuOpen, setMessageMenuOpen] = useState<string | null>(null);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const messageInputRef = useRef<HTMLInputElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const emojiPickerRef = useRef<HTMLDivElement>(null);
+    const roomMenuRef = useRef<HTMLDivElement>(null);
 
     // Scroll to bottom when new messages arrive
     useEffect(() => {
@@ -83,21 +107,120 @@ export default function ChatPage() {
         return () => window.removeEventListener('resize', handleResize);
     }, []);
 
+    // Close dropdowns when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            const target = event.target as Node;
+            if (emojiPickerRef.current && !emojiPickerRef.current.contains(target)) {
+                setShowEmojiPicker(false);
+            }
+            if (roomMenuRef.current && !roomMenuRef.current.contains(target)) {
+                setShowRoomMenu(false);
+            }
+            if (messageMenuOpen && !(target as HTMLElement).closest('.msg-menu-container')) {
+                setMessageMenuOpen(null);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
     // Load available users for new chat
     const loadAvailableUsers = async () => {
         const users = await fetchAvailableUsers();
+        console.log(users);
         setAvailableUsers(users);
     };
 
     // Handle send message
     const handleSendMessage = async () => {
-        if (!messageInput.trim() || sendingMessage) return;
+        if ((!messageInput.trim() && !pendingAttachment) || sendingMessage) return;
 
         const content = messageInput.trim();
+        const attachments = pendingAttachment ? [pendingAttachment] : undefined;
+        const type = pendingAttachment
+            ? (pendingAttachment.type.startsWith('image/') ? 'IMAGE' : 'FILE')
+            : 'TEXT';
+
         setMessageInput('');
-        await sendMessage(content);
+        setPendingAttachment(null);
+        setReplyingTo(null);
+        setShowEmojiPicker(false);
+
+        await sendMessage(content, type, attachments, replyingTo?._id);
         messageInputRef.current?.focus();
     };
+
+    // Handle reply
+    const handleReply = (message: any) => {
+        setReplyingTo(message);
+        messageInputRef.current?.focus();
+    };
+
+    // Handle pin/unpin toggle
+    const handlePinMessage = async (messageId: string) => {
+        if (!activeRoom) return;
+        const isPinned = activeRoom.pinnedMessages?.some(m => m._id === messageId);
+        if (isPinned) {
+            await unpinMessage(messageId);
+        } else {
+            await pinMessage(messageId);
+        }
+    };
+
+    // Handle forward
+    const handleForwardMessage = (message: any) => {
+        setMessageToForward(message);
+        setShowForwardModal(true);
+    };
+
+    const confirmForward = async (targetRoomId: string) => {
+        if (!messageToForward) return;
+        await forwardMessage(messageToForward._id, [targetRoomId]);
+        setShowForwardModal(false);
+        setMessageToForward(null);
+    };
+
+    // Handle file selection
+    const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        try {
+            setIsUploading(true);
+            const uploadedFile = await uploadFile(file);
+            setPendingAttachment(uploadedFile);
+        } catch (err) {
+            console.error('Upload failed:', err);
+        } finally {
+            setIsUploading(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+    };
+
+    // Handle emoji click
+    const onEmojiClick = (emojiData: any) => {
+        setMessageInput(prev => prev + emojiData.emoji);
+        // Don't close picker so user can add multiple emojis
+    };
+
+    // Handle delete message
+    const handleDeleteMessage = async (messageId: string) => {
+        if (confirm('Are you sure you want to delete this message?')) {
+            await deleteMessage(messageId);
+        }
+    };
+
+    // Close emoji picker when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
+                setShowEmojiPicker(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
     // Handle typing
     const handleTyping = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -192,18 +315,18 @@ export default function ChatPage() {
 
     return (
         <DashboardLayout>
-            <div className="h-[calc(100vh-120px)] flex bg-slate-900/50 rounded-2xl border border-slate-700/50 overflow-hidden">
+            <div className="fixed inset-0 lg:static flex flex-col lg:flex-row bg-gray-50 dark:bg-black h-[100dvh] lg:h-[calc(100vh-64px)] -m-4 lg:-m-8 overflow-hidden">
 
                 {/* Sidebar - Chat List */}
                 <div className={cn(
-                    "w-80 border-r border-slate-700/50 flex flex-col bg-slate-900/30",
+                    "w-full lg:w-80 xl:w-96 border-r border-gray-200 dark:border-slate-800 flex flex-col bg-white dark:bg-slate-900/50 transition-all duration-300",
                     isMobileView && !showMobileSidebar && "hidden",
-                    isMobileView && "w-full"
+                    !isMobileView && "flex"
                 )}>
                     {/* Sidebar Header */}
-                    <div className="p-4 border-b border-slate-700/50">
+                    <div className="p-4 border-b border-gray-200 dark:border-slate-700/50">
                         <div className="flex items-center justify-between mb-4">
-                            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                            <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
                                 <MessageSquare className="w-6 h-6 text-blue-500" />
                                 Messages
                             </h2>
@@ -224,27 +347,27 @@ export default function ChatPage() {
 
                         {/* Search */}
                         <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-slate-500" />
                             <input
                                 type="text"
                                 placeholder="Search conversations..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2 bg-slate-800/50 border border-slate-700/50 
-                                         rounded-lg text-sm text-white placeholder-slate-500
+                                className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700/50 
+                                         rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-500
                                          focus:outline-none focus:border-blue-500/50"
                             />
                         </div>
                     </div>
 
                     {/* Room List */}
-                    <div className="flex-1 overflow-y-auto">
+                    <div className="flex-1 overflow-y-auto native-scroll">
                         {loading && rooms.length === 0 ? (
                             <div className="flex items-center justify-center py-12">
                                 <div className="w-6 h-6 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
                             </div>
                         ) : filteredRooms.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center py-12 text-slate-500">
+                            <div className="flex flex-col items-center justify-center py-12 text-gray-500 dark:text-slate-500">
                                 <MessageSquare className="w-12 h-12 mb-3 opacity-50" />
                                 <p className="text-sm">No conversations yet</p>
                                 <p className="text-xs mt-1">Start a new chat to begin</p>
@@ -252,7 +375,7 @@ export default function ChatPage() {
                         ) : (
                             filteredRooms.map(room => {
                                 const otherUser = room.type === 'DIRECT' ? getOtherParticipant(room) : null;
-                                const isOnline = otherUser && onlineUsers.includes(otherUser._id);
+                                const isOnline = isConnected && otherUser && onlineUsers.includes(otherUser._id);
                                 const unread = unreadCounts[room._id] || 0;
                                 const isActive = activeRoom?._id === room._id;
 
@@ -266,8 +389,8 @@ export default function ChatPage() {
                                         className={cn(
                                             "px-4 py-3 cursor-pointer transition-all border-l-2",
                                             isActive
-                                                ? "bg-blue-500/10 border-blue-500"
-                                                : "border-transparent hover:bg-slate-800/30"
+                                                ? "bg-blue-50 dark:bg-blue-500/10 border-blue-500"
+                                                : "border-transparent hover:bg-gray-50 dark:hover:bg-slate-800/30"
                                         )}
                                     >
                                         <div className="flex items-center gap-3">
@@ -289,24 +412,24 @@ export default function ChatPage() {
                                                 </div>
                                                 {isOnline && (
                                                     <span className="absolute bottom-0 right-0 w-3.5 h-3.5 
-                                                                   bg-emerald-500 border-2 border-slate-900 rounded-full" />
+                                                                   bg-emerald-500 border-2 border-white dark:border-slate-900 rounded-full" />
                                                 )}
                                             </div>
 
                                             {/* Content */}
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-center justify-between">
-                                                    <p className="font-semibold text-white truncate">
+                                                    <p className="font-semibold text-gray-900 dark:text-white truncate">
                                                         {room.type === 'DIRECT'
                                                             ? otherUser?.name
                                                             : room.name}
                                                     </p>
-                                                    <span className="text-xs text-slate-500">
+                                                    <span className="text-xs text-gray-500 dark:text-slate-500">
                                                         {room.lastMessageAt && formatTime(room.lastMessageAt)}
                                                     </span>
                                                 </div>
                                                 <div className="flex items-center justify-between mt-0.5">
-                                                    <p className="text-sm text-slate-400 truncate">
+                                                    <p className="text-sm text-gray-600 dark:text-slate-400 truncate">
                                                         {room.lastMessage?.content || 'No messages yet'}
                                                     </p>
                                                     {unread > 0 && (
@@ -325,7 +448,7 @@ export default function ChatPage() {
                     </div>
 
                     {/* Create Group Button */}
-                    <div className="p-4 border-t border-slate-700/50">
+                    <div className="p-4 border-t border-gray-200 dark:border-slate-700/50">
                         <Button
                             variant="outline"
                             className="w-full"
@@ -347,12 +470,12 @@ export default function ChatPage() {
                 )}>
                     {!activeRoom ? (
                         /* No active chat */
-                        <div className="flex-1 flex flex-col items-center justify-center text-slate-500">
-                            <div className="w-24 h-24 rounded-full bg-slate-800/50 flex items-center justify-center mb-4">
+                        <div className="flex-1 flex flex-col items-center justify-center text-gray-500 dark:text-slate-500">
+                            <div className="w-24 h-24 rounded-full bg-gray-200 dark:bg-slate-800/50 flex items-center justify-center mb-4">
                                 <MessageSquare className="w-12 h-12 opacity-50" />
                             </div>
-                            <h3 className="text-xl font-semibold text-white mb-2">Welcome to Chat</h3>
-                            <p className="text-sm text-center max-w-sm">
+                            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Welcome to Chat</h3>
+                            <p className="text-sm text-center max-w-sm text-gray-600 dark:text-slate-400">
                                 Select a conversation from the sidebar or start a new chat to begin messaging.
                             </p>
                             <Button
@@ -370,7 +493,7 @@ export default function ChatPage() {
                     ) : (
                         <>
                             {/* Chat Header */}
-                            <div className="px-6 py-4 border-b border-slate-700/50 bg-slate-900/50">
+                            <div className="px-6 py-4 border-b border-gray-200 dark:border-slate-700/50 bg-white dark:bg-slate-900/50">
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-3">
                                         {isMobileView && (
@@ -402,16 +525,18 @@ export default function ChatPage() {
                                         </div>
 
                                         <div>
-                                            <h3 className="font-semibold text-white">
+                                            <h3 className="font-semibold text-gray-900 dark:text-white">
                                                 {activeRoom.type === 'DIRECT'
                                                     ? getOtherParticipant(activeRoom)?.name
                                                     : activeRoom.name}
                                             </h3>
-                                            <p className="text-xs text-slate-400">
+                                            <p className="text-xs text-gray-500 dark:text-slate-400">
                                                 {activeRoom.type === 'DIRECT' ? (
-                                                    onlineUsers.includes(getOtherParticipant(activeRoom)?._id || '')
-                                                        ? '🟢 Online'
-                                                        : '⚪ Offline'
+                                                    !isConnected
+                                                        ? '🔄 Checking...'
+                                                        : onlineUsers.includes(getOtherParticipant(activeRoom)?._id || '')
+                                                            ? '🟢 Online'
+                                                            : '⚪ Offline'
                                                 ) : (
                                                     `${activeRoom.participants.length} members`
                                                 )}
@@ -422,7 +547,7 @@ export default function ChatPage() {
                                     <div className="flex items-center gap-2">
                                         {!isConnected && (
                                             <span className="text-xs text-amber-400 px-2 py-1 rounded bg-amber-500/10">
-                                                Connecting...
+                                                Reconnecting...
                                             </span>
                                         )}
                                         <Button variant="ghost" size="sm" className="p-2">
@@ -431,20 +556,69 @@ export default function ChatPage() {
                                         <Button variant="ghost" size="sm" className="p-2">
                                             <Video className="w-5 h-5" />
                                         </Button>
-                                        <Button variant="ghost" size="sm" className="p-2">
-                                            <MoreVertical className="w-5 h-5" />
-                                        </Button>
+                                        <div className="relative" ref={roomMenuRef}>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="p-2"
+                                                onClick={() => setShowRoomMenu(!showRoomMenu)}
+                                            >
+                                                <MoreVertical className="w-5 h-5 text-gray-500 dark:text-slate-400" />
+                                            </Button>
+
+                                            {showRoomMenu && (
+                                                <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-gray-100 dark:border-slate-700 py-1 z-50 animate-in fade-in zoom-in-95 duration-100">
+                                                    <button className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700/50 flex items-center gap-2">
+                                                        <User className="w-4 h-4" />
+                                                        View Profile
+                                                    </button>
+                                                    <button className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700/50 flex items-center gap-2">
+                                                        <Search className="w-4 h-4" />
+                                                        Search Messages
+                                                    </button>
+                                                    <div className="h-px bg-gray-100 dark:bg-slate-700 my-1" />
+                                                    <button className="w-full text-left px-4 py-2 text-sm text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/10 flex items-center gap-2">
+                                                        <Circle className="w-4 h-4" />
+                                                        Mute Notifications
+                                                    </button>
+                                                    <button className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 flex items-center gap-2">
+                                                        <Trash2 className="w-4 h-4" />
+                                                        Clear Chat
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
 
+                            {/* Pinned Messages Banner */}
+                            {activeRoom.pinnedMessages && activeRoom.pinnedMessages.length > 0 && (
+                                <div className="px-6 py-2 bg-amber-50/50 dark:bg-amber-500/5 border-b border-amber-100 dark:border-amber-900/30 flex items-center justify-between group/pins">
+                                    <div className="flex items-center gap-3 overflow-hidden">
+                                        <Pin className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-[11px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider">Pinned Message</p>
+                                            <p className="text-xs text-amber-900 dark:text-amber-200 truncate opacity-80">
+                                                {activeRoom.pinnedMessages[activeRoom.pinnedMessages.length - 1].content}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    {activeRoom.pinnedMessages.length > 1 && (
+                                        <span className="text-[10px] font-bold text-amber-600 dark:text-amber-500 bg-amber-100 dark:bg-amber-900/50 px-1.5 py-0.5 rounded ml-2">
+                                            +{activeRoom.pinnedMessages.length - 1}
+                                        </span>
+                                    )}
+                                </div>
+                            )}
+
                             {/* Messages Area */}
-                            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6 bg-gray-100/30 dark:bg-transparent native-scroll scroll-smooth">
                                 {groupMessagesByDate(messages).map((group, groupIdx) => (
                                     <div key={groupIdx}>
                                         {/* Date Header */}
                                         <div className="flex items-center justify-center my-4">
-                                            <span className="px-3 py-1 text-xs text-slate-400 bg-slate-800/50 rounded-full">
+                                            <span className="px-3 py-1 text-xs text-gray-600 dark:text-slate-400 bg-white dark:bg-slate-800/50 rounded-full shadow-sm dark:shadow-none">
                                                 {formatDateHeader(group.date)}
                                             </span>
                                         </div>
@@ -458,7 +632,7 @@ export default function ChatPage() {
                                             if (isSystem) {
                                                 return (
                                                     <div key={msg._id} className="flex justify-center my-2">
-                                                        <span className="text-xs text-slate-500 italic">
+                                                        <span className="text-xs text-gray-500 dark:text-slate-500 italic">
                                                             {msg.content}
                                                         </span>
                                                     </div>
@@ -469,55 +643,247 @@ export default function ChatPage() {
                                                 <div
                                                     key={msg._id}
                                                     className={cn(
-                                                        "flex gap-3 group",
-                                                        isOwn ? "justify-end" : "justify-start"
+                                                        "flex gap-3 group/msg relative mb-1",
+                                                        isOwn ? "flex-row-reverse" : "flex-row"
                                                     )}
                                                 >
                                                     {/* Avatar (for others) */}
                                                     {!isOwn && (
-                                                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 
-                                                                      flex items-center justify-center flex-shrink-0">
-                                                            <span className="text-white text-sm font-bold">
+                                                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-blue-600 
+                                                                      flex items-center justify-center flex-shrink-0 mt-auto shadow-sm border border-white/20">
+                                                            <span className="text-white text-[10px] font-bold">
                                                                 {sender?.name?.charAt(0).toUpperCase()}
                                                             </span>
                                                         </div>
                                                     )}
 
-                                                    {/* Message Bubble */}
+                                                    {/* Message Bubble Container */}
                                                     <div className={cn(
-                                                        "max-w-[70%] rounded-2xl px-4 py-2",
-                                                        isOwn
-                                                            ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-br-sm"
-                                                            : "bg-slate-800/70 text-white rounded-bl-sm",
-                                                        msg.isDeleted && "opacity-50 italic"
+                                                        "max-w-[85%] sm:max-w-[70%] relative flex flex-col",
+                                                        isOwn ? "items-end text-right" : "items-start text-left"
                                                     )}>
+                                                        {/* Message Actions (on hover) */}
+                                                        {!msg.isDeleted && (
+                                                            <div className={cn(
+                                                                "flex items-center opacity-0 group-hover/msg:opacity-100 transition-all duration-200 absolute -top-5 z-20",
+                                                                isOwn ? "right-1" : "left-1"
+                                                            )}>
+                                                                <div className="bg-white dark:bg-slate-800 shadow-xl border border-gray-100 dark:border-slate-700/50 rounded-full p-0.5 flex gap-0.5 backdrop-blur-md">
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        onClick={() => handleReply(msg)}
+                                                                        className="h-6 w-6 p-0 rounded-full hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-500 dark:text-slate-400"
+                                                                    >
+                                                                        <Reply className="w-3 h-3" />
+                                                                    </Button>
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        onClick={() => handlePinMessage(msg._id)}
+                                                                        className={cn(
+                                                                            "h-6 w-6 p-0 rounded-full transition-colors",
+                                                                            activeRoom.pinnedMessages?.some(m => m._id === msg._id)
+                                                                                ? "bg-amber-50 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400"
+                                                                                : "hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-500 dark:text-slate-400"
+                                                                        )}
+                                                                    >
+                                                                        <Pin className={cn("w-3 h-3", activeRoom.pinnedMessages?.some(m => m._id === msg._id) && "fill-current")} />
+                                                                    </Button>
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        onClick={() => handleForwardMessage(msg)}
+                                                                        className="h-6 w-6 p-0 rounded-full hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-500 dark:text-slate-400"
+                                                                    >
+                                                                        <Forward className="w-3 h-3" />
+                                                                    </Button>
+                                                                    {isOwn && (
+                                                                        <Button
+                                                                            variant="ghost"
+                                                                            size="sm"
+                                                                            onClick={() => handleDeleteMessage(msg._id)}
+                                                                            className="h-6 w-6 p-0 rounded-full hover:bg-red-50 dark:hover:bg-red-500/10 text-red-500"
+                                                                        >
+                                                                            <Trash2 className="w-3 h-3" />
+                                                                        </Button>
+                                                                    )}
+                                                                    <div className="relative msg-menu-container">
+                                                                        <Button
+                                                                            variant="ghost"
+                                                                            size="sm"
+                                                                            onClick={() => setMessageMenuOpen(messageMenuOpen === msg._id ? null : msg._id)}
+                                                                            className="h-6 w-6 p-0 rounded-full hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-500 dark:text-slate-400"
+                                                                        >
+                                                                            <MoreVertical className="w-3 h-3" />
+                                                                        </Button>
+
+                                                                        {messageMenuOpen === msg._id && (
+                                                                            <div className={cn(
+                                                                                "absolute mt-1 w-32 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-gray-100 dark:border-slate-700 py-1 z-50 animate-in fade-in zoom-in-95 duration-100",
+                                                                                isOwn ? "right-0" : "left-0"
+                                                                            )}>
+                                                                                <button
+                                                                                    onClick={() => {
+                                                                                        navigator.clipboard.writeText(msg.content);
+                                                                                        setMessageMenuOpen(null);
+                                                                                    }}
+                                                                                    className="w-full text-left px-3 py-1.5 text-xs text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700/50 flex items-center gap-2"
+                                                                                >
+                                                                                    <Copy className="w-3 h-3" />
+                                                                                    Copy Text
+                                                                                </button>
+                                                                                {!isOwn && (
+                                                                                    <button
+                                                                                        className="w-full text-left px-3 py-1.5 text-xs text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700/50 flex items-center gap-2"
+                                                                                    >
+                                                                                        <Share2 className="w-3 h-3" />
+                                                                                        Share
+                                                                                    </button>
+                                                                                )}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        )}
                                                         {/* Sender name (for group chats) */}
                                                         {!isOwn && activeRoom.type === 'GROUP' && (
-                                                            <p className="text-xs font-medium text-blue-400 mb-1">
+                                                            <p className="text-[11px] font-semibold text-gray-500 dark:text-slate-400 mb-1 ml-2">
                                                                 {sender?.name}
                                                             </p>
                                                         )}
 
-                                                        <p className="text-sm break-words">{msg.content}</p>
-
                                                         <div className={cn(
-                                                            "flex items-center gap-1 mt-1",
-                                                            isOwn ? "justify-end" : "justify-start"
+                                                            "relative rounded-[20px] shadow-sm transition-all duration-200",
+                                                            isOwn
+                                                                ? "bg-gradient-to-br from-blue-600 to-indigo-700 text-white rounded-tr-none hover:shadow-md hover:shadow-blue-500/10"
+                                                                : "bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 rounded-tl-none border border-gray-100 dark:border-slate-700/50 hover:shadow-md hover:shadow-black/5",
+                                                            msg.isDeleted && "opacity-60 italic bg-gray-100 dark:bg-slate-900 text-gray-500"
                                                         )}>
-                                                            <span className={cn(
-                                                                "text-xs",
-                                                                isOwn ? "text-blue-100/70" : "text-slate-400"
+                                                            {/* Forwarded Tag */}
+                                                            {msg.isForwarded && (
+                                                                <div className="flex items-center gap-1 px-3 pt-2 text-[10px] opacity-70 italic font-medium">
+                                                                    <Forward className="w-2.5 h-2.5" />
+                                                                    Forwarded
+                                                                </div>
+                                                            )}
+
+                                                            {/* Reply Reference */}
+                                                            {msg.replyTo && (
+                                                                <div className={cn(
+                                                                    "mx-2 mt-2 p-2 rounded-lg text-xs border-l-4 bg-black/5 dark:bg-white/5",
+                                                                    isOwn ? "border-white/30" : "border-blue-500/50"
+                                                                )}>
+                                                                    <p className="font-bold opacity-70 mb-0.5">
+                                                                        {typeof msg.replyTo.senderId === 'object' ? msg.replyTo.senderId.name : 'User'}
+                                                                    </p>
+                                                                    <p className="line-clamp-1 opacity-60">
+                                                                        {msg.replyTo.content}
+                                                                    </p>
+                                                                </div>
+                                                            )}
+
+                                                            {/* Bubble Tail */}
+                                                            <div className={cn(
+                                                                "absolute top-0 w-3 h-3 overflow-hidden",
+                                                                isOwn ? "-right-2" : "-left-2"
                                                             )}>
-                                                                {formatTime(msg.createdAt)}
-                                                            </span>
-                                                            {msg.isEdited && (
-                                                                <span className="text-xs text-slate-400">(edited)</span>
-                                                            )}
-                                                            {isOwn && (
-                                                                msg.readBy.length > 0
-                                                                    ? <CheckCheck className="w-3.5 h-3.5 text-blue-200" />
-                                                                    : <Check className="w-3.5 h-3.5 text-blue-100/50" />
-                                                            )}
+                                                                <div className={cn(
+                                                                    "w-full h-full transform origin-top",
+                                                                    isOwn
+                                                                        ? "bg-indigo-700 rotate-45 -translate-x-1"
+                                                                        : "bg-white dark:bg-slate-800 border-l border-t border-gray-100 dark:border-slate-700/50 -rotate-45 translate-x-1"
+                                                                )} />
+                                                            </div>
+
+                                                            <div className="px-4 py-2.5">
+                                                                {/* Attachments */}
+                                                                {msg.attachments && msg.attachments.length > 0 && (
+                                                                    <div className="mb-2 -mx-1 flex flex-wrap gap-1">
+                                                                        {msg.attachments.map((file, idx) => (
+                                                                            <div
+                                                                                key={idx}
+                                                                                className={cn(
+                                                                                    "rounded-xl overflow-hidden border transition-transform hover:scale-[1.02]",
+                                                                                    isOwn ? "border-white/20" : "border-gray-100 dark:border-slate-700"
+                                                                                )}
+                                                                            >
+                                                                                {file.type.startsWith('image/') ? (
+                                                                                    <div className="relative group/attach cursor-zoom-in">
+                                                                                        <img
+                                                                                            src={file.url}
+                                                                                            alt={file.name}
+                                                                                            className="max-w-full h-auto max-h-72 object-cover"
+                                                                                            onClick={() => window.open(file.url, '_blank')}
+                                                                                        />
+                                                                                        <div className="absolute inset-0 bg-black/0 group-hover/attach:bg-black/10 transition-colors" />
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    <a
+                                                                                        href={file.url}
+                                                                                        target="_blank"
+                                                                                        rel="noopener noreferrer"
+                                                                                        className={cn(
+                                                                                            "flex items-center gap-3 p-3 transition-colors min-w-[200px]",
+                                                                                            isOwn ? "bg-white/10 hover:bg-white/20" : "bg-gray-50 dark:bg-slate-900 hover:bg-gray-100 dark:hover:bg-slate-700"
+                                                                                        )}
+                                                                                    >
+                                                                                        <div className={cn(
+                                                                                            "w-10 h-10 rounded-lg flex items-center justify-center",
+                                                                                            isOwn ? "bg-white/20" : "bg-blue-500/10 text-blue-500"
+                                                                                        )}>
+                                                                                            <FileIcon className="w-5 h-5" />
+                                                                                        </div>
+                                                                                        <div className="flex-1 min-w-0">
+                                                                                            <p className="text-xs font-medium truncate">{file.name}</p>
+                                                                                            <p className={cn("text-[10px] opacity-60", isOwn ? "text-white" : "text-gray-500")}>{(file.size / 1024).toFixed(1)} KB</p>
+                                                                                        </div>
+                                                                                        <Download className="w-4 h-4 opacity-40 hover:opacity-100" />
+                                                                                    </a>
+                                                                                )}
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+
+                                                                <p className="text-[14px] leading-relaxed break-words font-normal tracking-[0.01em]">
+                                                                    {msg.content}
+                                                                </p>
+
+                                                                <div className={cn(
+                                                                    "flex items-center gap-1.5 mt-1",
+                                                                    isOwn ? "justify-end" : "justify-start"
+                                                                )}>
+                                                                    <span className={cn(
+                                                                        "text-[10px] font-medium",
+                                                                        isOwn ? "text-white/60" : "text-gray-400 dark:text-slate-500"
+                                                                    )}>
+                                                                        {formatTime(msg.createdAt)}
+                                                                    </span>
+
+                                                                    {msg.isEdited && (
+                                                                        <span className={cn(
+                                                                            "text-[10px] italic",
+                                                                            isOwn ? "text-white/40" : "text-gray-400"
+                                                                        )}>edited</span>
+                                                                    )}
+
+                                                                    {isOwn && (
+                                                                        <div className="flex -space-x-1 ml-0.5">
+                                                                            {msg.readBy.length > 0 ? (
+                                                                                <CheckCheck className="w-3.5 h-3.5 text-blue-300 drop-shadow-sm" />
+                                                                            ) : (
+                                                                                <Check className="w-3.5 h-3.5 text-white/40" />
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+
+                                                                    {activeRoom.pinnedMessages?.some(m => m._id === msg._id) && (
+                                                                        <Pin className="w-2.5 h-2.5 text-amber-500 fill-current ml-1" />
+                                                                    )}
+                                                                </div>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -528,7 +894,7 @@ export default function ChatPage() {
 
                                 {/* Typing Indicator */}
                                 {typingUsers.length > 0 && (
-                                    <div className="flex items-center gap-2 text-slate-400 text-sm">
+                                    <div className="flex items-center gap-2 text-gray-500 dark:text-slate-400 text-sm">
                                         <div className="flex gap-1">
                                             <span className="w-2 h-2 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: '0ms' }} />
                                             <span className="w-2 h-2 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: '150ms' }} />
@@ -542,10 +908,77 @@ export default function ChatPage() {
                             </div>
 
                             {/* Message Input */}
-                            <div className="px-6 py-4 border-t border-slate-700/50 bg-slate-900/50">
-                                <div className="flex items-center gap-3">
-                                    <Button variant="ghost" size="sm" className="p-2 text-slate-400 hover:text-white">
-                                        <Paperclip className="w-5 h-5" />
+                            <div className="px-6 py-4 border-t border-gray-200 dark:border-slate-700/50 bg-white dark:bg-slate-900/50">
+                                {/* Reply Preview */}
+                                {replyingTo && (
+                                    <div className="mb-3 p-3 bg-blue-50/50 dark:bg-blue-500/5 rounded-xl border-l-4 border-blue-500 flex items-center gap-3 relative animate-in slide-in-from-bottom-2">
+                                        <Reply className="w-4 h-4 text-blue-500" />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-xs font-bold text-blue-600 dark:text-blue-400">
+                                                Replying to {typeof replyingTo.senderId === 'object' ? replyingTo.senderId.name : 'User'}
+                                            </p>
+                                            <p className="text-sm text-gray-600 dark:text-slate-400 truncate">
+                                                {replyingTo.content}
+                                            </p>
+                                        </div>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => setReplyingTo(null)}
+                                            className="p-1 h-auto hover:bg-red-50 dark:hover:bg-red-500/10 text-gray-400 hover:text-red-500"
+                                        >
+                                            <X className="w-4 h-4" />
+                                        </Button>
+                                    </div>
+                                )}
+
+                                {/* Attachment Preview */}
+                                {pendingAttachment && (
+                                    <div className="mb-3 p-2 bg-gray-100 dark:bg-slate-800 rounded-lg flex items-center gap-3 relative animate-in slide-in-from-bottom-2">
+                                        {pendingAttachment.type.startsWith('image/') ? (
+                                            <div className="w-12 h-12 rounded bg-gray-200 dark:bg-slate-700 overflow-hidden">
+                                                <img src={pendingAttachment.url} alt="Preview" className="w-full h-full object-cover" />
+                                            </div>
+                                        ) : (
+                                            <div className="w-12 h-12 rounded bg-blue-500/20 flex items-center justify-center">
+                                                <FileIcon className="w-6 h-6 text-blue-500" />
+                                            </div>
+                                        )}
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-medium truncate">{pendingAttachment.name}</p>
+                                            <p className="text-xs text-gray-500">{(pendingAttachment.size / 1024).toFixed(1)} KB</p>
+                                        </div>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => setPendingAttachment(null)}
+                                            className="p-1 h-auto"
+                                        >
+                                            <X className="w-4 h-4" />
+                                        </Button>
+                                    </div>
+                                )}
+
+                                <div className="flex items-center gap-3 relative">
+                                    <input
+                                        type="file"
+                                        ref={fileInputRef}
+                                        onChange={handleFileSelect}
+                                        className="hidden"
+                                    />
+
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => fileInputRef.current?.click()}
+                                        disabled={isUploading}
+                                        className="p-2 text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white"
+                                    >
+                                        {isUploading ? (
+                                            <div className="w-5 h-5 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
+                                        ) : (
+                                            <Paperclip className="w-5 h-5" />
+                                        )}
                                     </Button>
 
                                     <div className="flex-1 relative">
@@ -556,24 +989,51 @@ export default function ChatPage() {
                                             value={messageInput}
                                             onChange={handleTyping}
                                             onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-                                            className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700/50 
-                                                     rounded-full text-white placeholder-slate-500
-                                                     focus:outline-none focus:border-blue-500/50"
+                                            className="w-full px-4 py-3 bg-gray-100 dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700/50 
+                                                     rounded-full text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-500
+                                                     focus:outline-none focus:border-blue-500/50 shadow-inner"
                                         />
                                     </div>
 
-                                    <Button variant="ghost" size="sm" className="p-2 text-slate-400 hover:text-white">
-                                        <Smile className="w-5 h-5" />
-                                    </Button>
+                                    <div className="relative" ref={emojiPickerRef}>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                                            className={cn(
+                                                "p-2 transition-colors",
+                                                showEmojiPicker ? "text-blue-500" : "text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white"
+                                            )}
+                                        >
+                                            <Smile className="w-5 h-5" />
+                                        </Button>
+
+                                        {showEmojiPicker && (
+                                            <div className="absolute bottom-full right-0 mb-4 z-50 shadow-2xl rounded-2xl overflow-hidden border border-gray-200 dark:border-slate-700">
+                                                <EmojiPicker
+                                                    onEmojiClick={onEmojiClick}
+                                                    theme={theme === 'dark' ? EmojiTheme.DARK : EmojiTheme.LIGHT}
+                                                    lazyLoadEmojis={true}
+                                                    searchPlaceholder="Search emojis..."
+                                                    width={320}
+                                                    height={400}
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
 
                                     <Button
                                         variant="primary"
                                         size="sm"
                                         onClick={handleSendMessage}
-                                        disabled={!messageInput.trim() || sendingMessage}
-                                        className="p-3 rounded-full"
+                                        disabled={(!messageInput.trim() && !pendingAttachment) || sendingMessage || isUploading}
+                                        className="p-3 rounded-full shadow-lg shadow-blue-500/20 active:scale-95 transition-transform"
                                     >
-                                        <Send className="w-5 h-5" />
+                                        {sendingMessage ? (
+                                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                        ) : (
+                                            <Send className="w-5 h-5" />
+                                        )}
                                     </Button>
                                 </div>
                             </div>
@@ -592,7 +1052,7 @@ export default function ChatPage() {
                 title="Start New Conversation"
             >
                 <div className="space-y-4">
-                    <p className="text-sm text-slate-400">Select a user to start a direct message</p>
+                    <p className="text-sm text-gray-600 dark:text-slate-400">Select a user to start a direct message</p>
 
                     <div className="max-h-64 overflow-y-auto space-y-2">
                         {availableUsers.map(user => (
@@ -600,7 +1060,7 @@ export default function ChatPage() {
                                 key={user._id}
                                 onClick={() => handleCreateDirectChat(user._id)}
                                 className="flex items-center gap-3 p-3 rounded-lg cursor-pointer
-                                         hover:bg-slate-800/50 transition-colors"
+                                         hover:bg-gray-100 dark:hover:bg-slate-800/50 transition-colors"
                             >
                                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 
                                               flex items-center justify-center">
@@ -609,8 +1069,8 @@ export default function ChatPage() {
                                     </span>
                                 </div>
                                 <div className="flex-1">
-                                    <p className="font-medium text-white">{user.name}</p>
-                                    <p className="text-xs text-slate-400">{user.email}</p>
+                                    <p className="font-medium text-gray-900 dark:text-white">{user.name}</p>
+                                    <p className="text-xs text-gray-500 dark:text-slate-400">{user.email}</p>
                                 </div>
                                 {onlineUsers.includes(user._id) && (
                                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
@@ -634,33 +1094,33 @@ export default function ChatPage() {
             >
                 <div className="space-y-4">
                     <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-1">Group Name</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Group Name</label>
                         <input
                             type="text"
                             value={groupName}
                             onChange={(e) => setGroupName(e.target.value)}
                             placeholder="Enter group name..."
-                            className="w-full px-4 py-2 bg-slate-800/50 border border-slate-700/50 
-                                     rounded-lg text-white placeholder-slate-500
+                            className="w-full px-4 py-2 bg-gray-100 dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700/50 
+                                     rounded-lg text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-500
                                      focus:outline-none focus:border-blue-500/50"
                         />
                     </div>
 
                     <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-1">Description (optional)</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Description (optional)</label>
                         <input
                             type="text"
                             value={groupDescription}
                             onChange={(e) => setGroupDescription(e.target.value)}
                             placeholder="What's this group about?"
-                            className="w-full px-4 py-2 bg-slate-800/50 border border-slate-700/50 
-                                     rounded-lg text-white placeholder-slate-500
+                            className="w-full px-4 py-2 bg-gray-100 dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700/50 
+                                     rounded-lg text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-500
                                      focus:outline-none focus:border-blue-500/50"
                         />
                     </div>
 
                     <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-2">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
                             Select Members ({selectedUsers.length} selected)
                         </label>
                         <div className="max-h-48 overflow-y-auto space-y-2">
@@ -677,8 +1137,8 @@ export default function ChatPage() {
                                     className={cn(
                                         "flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors",
                                         selectedUsers.includes(user._id)
-                                            ? "bg-blue-500/20 border border-blue-500/50"
-                                            : "hover:bg-slate-800/50 border border-transparent"
+                                            ? "bg-blue-50 dark:bg-blue-500/20 border border-blue-500/50"
+                                            : "hover:bg-gray-100 dark:hover:bg-slate-800/50 border border-transparent"
                                     )}
                                 >
                                     <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 
@@ -688,8 +1148,8 @@ export default function ChatPage() {
                                         </span>
                                     </div>
                                     <div className="flex-1">
-                                        <p className="font-medium text-white text-sm">{user.name}</p>
-                                        <p className="text-xs text-slate-400">{user.email}</p>
+                                        <p className="font-medium text-gray-900 dark:text-white text-sm">{user.name}</p>
+                                        <p className="text-xs text-gray-500 dark:text-slate-400">{user.email}</p>
                                     </div>
                                     {selectedUsers.includes(user._id) && (
                                         <Check className="w-5 h-5 text-blue-400" />
@@ -722,6 +1182,57 @@ export default function ChatPage() {
                     </div>
                 </div>
             </Modal>
-        </DashboardLayout>
+
+            {/* Forward Message Modal */}
+            <Modal
+                isOpen={showForwardModal}
+                onClose={() => {
+                    setShowForwardModal(false);
+                    setMessageToForward(null);
+                }}
+                title="Forward Message"
+            >
+                <div className="space-y-4">
+                    <p className="text-sm text-gray-600 dark:text-slate-400">Select a conversation to forward this message to</p>
+
+                    <div className="max-h-64 overflow-y-auto space-y-2">
+                        {rooms.map(room => (
+                            <div
+                                key={room._id}
+                                onClick={() => confirmForward(room._id)}
+                                className="flex items-center gap-3 p-3 rounded-lg cursor-pointer
+                                         hover:bg-gray-100 dark:hover:bg-slate-800/50 transition-colors border border-transparent hover:border-blue-500/20"
+                            >
+                                <div className={cn(
+                                    "w-10 h-10 rounded-full flex items-center justify-center",
+                                    room.type === 'DIRECT'
+                                        ? "bg-gradient-to-br from-blue-500 to-cyan-500"
+                                        : "bg-gradient-to-br from-purple-500 to-pink-500"
+                                )}>
+                                    {room.type === 'DIRECT' ? (
+                                        <span className="text-white font-bold">
+                                            {getOtherParticipant(room)?.name?.charAt(0).toUpperCase()}
+                                        </span>
+                                    ) : (
+                                        <Users className="w-5 h-5 text-white" />
+                                    )}
+                                </div>
+                                <div className="flex-1">
+                                    <p className="font-medium text-gray-900 dark:text-white">
+                                        {room.type === 'DIRECT'
+                                            ? getOtherParticipant(room)?.name
+                                            : room.name}
+                                    </p>
+                                    <p className="text-xs text-gray-500 dark:text-slate-400">
+                                        {room.type === 'DIRECT' ? 'Direct Message' : 'Group Chat'}
+                                    </p>
+                                </div>
+                                <Forward className="w-4 h-4 text-gray-400" />
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </Modal>
+        </DashboardLayout >
     );
 }

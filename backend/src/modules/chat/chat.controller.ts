@@ -2,8 +2,10 @@ import { Request, Response } from 'express';
 import { chatService } from './chat.service.js';
 
 interface AuthRequest extends Request {
-    userId?: string;
-    userRole?: string;
+    user?: {
+        userId: string;
+        role: string;
+    };
 }
 
 // ============ ROOM ENDPOINTS ============
@@ -11,7 +13,7 @@ interface AuthRequest extends Request {
 // Get all user's chat rooms
 export const getRooms = async (req: AuthRequest, res: Response) => {
     try {
-        const userId = req.userId!;
+        const userId = req.user!.userId;
         const rooms = await chatService.getUserRooms(userId);
 
         res.json({
@@ -19,7 +21,7 @@ export const getRooms = async (req: AuthRequest, res: Response) => {
             data: rooms,
         });
     } catch (error: any) {
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: error.message || 'Failed to fetch rooms'
         });
@@ -29,7 +31,7 @@ export const getRooms = async (req: AuthRequest, res: Response) => {
 // Get or create direct chat
 export const getOrCreateDirectChat = async (req: AuthRequest, res: Response) => {
     try {
-        const userId = req.userId!;
+        const userId = req.user!.userId;
         const { participantId } = req.body;
 
         if (!participantId) {
@@ -53,7 +55,7 @@ export const getOrCreateDirectChat = async (req: AuthRequest, res: Response) => 
             data: room,
         });
     } catch (error: any) {
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: error.message || 'Failed to create direct chat'
         });
@@ -63,7 +65,7 @@ export const getOrCreateDirectChat = async (req: AuthRequest, res: Response) => 
 // Create group chat
 export const createGroupChat = async (req: AuthRequest, res: Response) => {
     try {
-        const userId = req.userId!;
+        const userId = req.user!.userId;
         const { name, participantIds, description } = req.body;
 
         if (!name || !participantIds || participantIds.length === 0) {
@@ -80,7 +82,7 @@ export const createGroupChat = async (req: AuthRequest, res: Response) => {
             data: room,
         });
     } catch (error: any) {
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: error.message || 'Failed to create group'
         });
@@ -90,7 +92,7 @@ export const createGroupChat = async (req: AuthRequest, res: Response) => {
 // Get room details
 export const getRoom = async (req: AuthRequest, res: Response) => {
     try {
-        const userId = req.userId!;
+        const userId = req.user!.userId;
         const { roomId } = req.params;
 
         const room = await chatService.getRoomById(roomId, userId);
@@ -107,7 +109,7 @@ export const getRoom = async (req: AuthRequest, res: Response) => {
             data: room,
         });
     } catch (error: any) {
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: error.message || 'Failed to fetch room'
         });
@@ -117,7 +119,7 @@ export const getRoom = async (req: AuthRequest, res: Response) => {
 // Add participants to group
 export const addParticipants = async (req: AuthRequest, res: Response) => {
     try {
-        const userId = req.userId!;
+        const userId = req.user!.userId;
         const { roomId } = req.params;
         const { participantIds } = req.body;
 
@@ -142,7 +144,7 @@ export const addParticipants = async (req: AuthRequest, res: Response) => {
             data: room,
         });
     } catch (error: any) {
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: error.message || 'Failed to add participants'
         });
@@ -152,7 +154,7 @@ export const addParticipants = async (req: AuthRequest, res: Response) => {
 // Remove participant from group
 export const removeParticipant = async (req: AuthRequest, res: Response) => {
     try {
-        const userId = req.userId!;
+        const userId = req.user!.userId;
         const { roomId, participantId } = req.params;
 
         const success = await chatService.removeParticipant(roomId, userId, participantId);
@@ -169,7 +171,7 @@ export const removeParticipant = async (req: AuthRequest, res: Response) => {
             message: 'Participant removed',
         });
     } catch (error: any) {
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: error.message || 'Failed to remove participant'
         });
@@ -179,7 +181,7 @@ export const removeParticipant = async (req: AuthRequest, res: Response) => {
 // Leave group
 export const leaveGroup = async (req: AuthRequest, res: Response) => {
     try {
-        const userId = req.userId!;
+        const userId = req.user!.userId;
         const { roomId } = req.params;
 
         const success = await chatService.leaveGroup(roomId, userId);
@@ -196,7 +198,7 @@ export const leaveGroup = async (req: AuthRequest, res: Response) => {
             message: 'Left the group',
         });
     } catch (error: any) {
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: error.message || 'Failed to leave group'
         });
@@ -208,7 +210,7 @@ export const leaveGroup = async (req: AuthRequest, res: Response) => {
 // Send message
 export const sendMessage = async (req: AuthRequest, res: Response) => {
     try {
-        const userId = req.userId!;
+        const userId = req.user!.userId;
         const { roomId } = req.params;
         const { content, type, attachments, replyToId } = req.body;
 
@@ -233,7 +235,7 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
             data: message,
         });
     } catch (error: any) {
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: error.message || 'Failed to send message'
         });
@@ -243,7 +245,7 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
 // Get room messages
 export const getMessages = async (req: AuthRequest, res: Response) => {
     try {
-        const userId = req.userId!;
+        const userId = req.user!.userId;
         const { roomId } = req.params;
         const page = parseInt(req.query.page as string) || 1;
         const limit = parseInt(req.query.limit as string) || 50;
@@ -256,7 +258,7 @@ export const getMessages = async (req: AuthRequest, res: Response) => {
             pagination: result.pagination,
         });
     } catch (error: any) {
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: error.message || 'Failed to fetch messages'
         });
@@ -266,7 +268,7 @@ export const getMessages = async (req: AuthRequest, res: Response) => {
 // Edit message
 export const editMessage = async (req: AuthRequest, res: Response) => {
     try {
-        const userId = req.userId!;
+        const userId = req.user!.userId;
         const { messageId } = req.params;
         const { content } = req.body;
 
@@ -291,7 +293,7 @@ export const editMessage = async (req: AuthRequest, res: Response) => {
             data: message,
         });
     } catch (error: any) {
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: error.message || 'Failed to edit message'
         });
@@ -301,7 +303,7 @@ export const editMessage = async (req: AuthRequest, res: Response) => {
 // Delete message
 export const deleteMessage = async (req: AuthRequest, res: Response) => {
     try {
-        const userId = req.userId!;
+        const userId = req.user!.userId;
         const { messageId } = req.params;
 
         const success = await chatService.deleteMessage(messageId, userId);
@@ -318,7 +320,7 @@ export const deleteMessage = async (req: AuthRequest, res: Response) => {
             message: 'Message deleted',
         });
     } catch (error: any) {
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: error.message || 'Failed to delete message'
         });
@@ -328,7 +330,7 @@ export const deleteMessage = async (req: AuthRequest, res: Response) => {
 // Mark messages as read
 export const markAsRead = async (req: AuthRequest, res: Response) => {
     try {
-        const userId = req.userId!;
+        const userId = req.user!.userId;
         const { roomId } = req.params;
 
         await chatService.markMessagesAsRead(roomId, userId);
@@ -348,7 +350,7 @@ export const markAsRead = async (req: AuthRequest, res: Response) => {
 // Get unread counts
 export const getUnreadCounts = async (req: AuthRequest, res: Response) => {
     try {
-        const userId = req.userId!;
+        const userId = req.user!.userId;
         const counts = await chatService.getUnreadCount(userId);
 
         res.json({
@@ -356,7 +358,7 @@ export const getUnreadCounts = async (req: AuthRequest, res: Response) => {
             data: counts,
         });
     } catch (error: any) {
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: error.message || 'Failed to fetch unread counts'
         });
@@ -366,7 +368,7 @@ export const getUnreadCounts = async (req: AuthRequest, res: Response) => {
 // Search messages
 export const searchMessages = async (req: AuthRequest, res: Response) => {
     try {
-        const userId = req.userId!;
+        const userId = req.user!.userId;
         const query = req.query.q as string;
         const limit = parseInt(req.query.limit as string) || 20;
 
@@ -384,7 +386,7 @@ export const searchMessages = async (req: AuthRequest, res: Response) => {
             data: messages,
         });
     } catch (error: any) {
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: error.message || 'Search failed'
         });
@@ -394,7 +396,7 @@ export const searchMessages = async (req: AuthRequest, res: Response) => {
 // Get available users for new chat
 export const getAvailableUsers = async (req: AuthRequest, res: Response) => {
     try {
-        const userId = req.userId!;
+        const userId = req.user!.userId;
         const users = await chatService.getAvailableUsers(userId);
 
         res.json({
@@ -402,9 +404,121 @@ export const getAvailableUsers = async (req: AuthRequest, res: Response) => {
             data: users,
         });
     } catch (error: any) {
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: error.message || 'Failed to fetch users'
         });
     }
 };
+
+// Upload file
+export const uploadFile = async (req: AuthRequest, res: Response) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                message: 'No file uploaded'
+            });
+        }
+
+        const fileData = {
+            url: (req.file as any).path,
+            name: req.file.originalname,
+            type: req.file.mimetype,
+            size: req.file.size
+        };
+
+        return res.json({
+            success: true,
+            data: fileData,
+        });
+    } catch (error: any) {
+        return res.status(500).json({
+            success: false,
+            message: error.message || 'File upload failed'
+        });
+    }
+};
+
+// Pin message
+export const pinMessage = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user!.userId;
+        const { roomId, messageId } = req.params;
+
+        const success = await chatService.pinMessage(roomId, messageId, userId);
+
+        if (!success) {
+            return res.status(403).json({
+                success: false,
+                message: 'Failed to pin message'
+            });
+        }
+
+        return res.json({
+            success: true,
+            message: 'Message pinned',
+        });
+    } catch (error: any) {
+        return res.status(500).json({
+            success: false,
+            message: error.message || 'Pin failed'
+        });
+    }
+};
+
+// Unpin message
+export const unpinMessage = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user!.userId;
+        const { roomId, messageId } = req.params;
+
+        const success = await chatService.unpinMessage(roomId, messageId, userId);
+
+        if (!success) {
+            return res.status(403).json({
+                success: false,
+                message: 'Failed to unpin message'
+            });
+        }
+
+        return res.json({
+            success: true,
+            message: 'Message unpinned',
+        });
+    } catch (error: any) {
+        return res.status(500).json({
+            success: false,
+            message: error.message || 'Unpin failed'
+        });
+    }
+};
+
+// Forward message
+export const forwardMessage = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user!.userId;
+        const { messageId } = req.params;
+        const { targetRoomIds } = req.body;
+
+        if (!targetRoomIds || targetRoomIds.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Target room IDs required'
+            });
+        }
+
+        const messages = await chatService.forwardMessage(userId, messageId, targetRoomIds);
+
+        return res.json({
+            success: true,
+            data: messages,
+        });
+    } catch (error: any) {
+        return res.status(500).json({
+            success: false,
+            message: error.message || 'Forward failed'
+        });
+    }
+};
+

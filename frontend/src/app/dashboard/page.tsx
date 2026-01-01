@@ -13,6 +13,7 @@ export default function DashboardPage() {
         debit: 0,
         users: 0
     });
+    const [transactions, setTransactions] = useState<any[]>([]);
 
     useEffect(() => {
         // Fetch dashboard stats (mocking for now or hitting API if ready)
@@ -22,6 +23,15 @@ export default function DashboardPage() {
             debit: 3210,
             users: 128
         });
+
+        // Generate mock transactions only on client
+        const mockTransactions = [1, 2, 3, 4, 5].map((i) => ({
+            id: `TRX-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
+            amount: Math.floor(Math.random() * 5000),
+            type: i % 2 === 0 ? 'CREDIT' : 'DEBIT',
+            date: '28 Dec 2025, 02:30 PM'
+        }));
+        setTransactions(mockTransactions);
     }, []);
 
     const StatCard = ({ title, value, icon: Icon, color }: any) => (
@@ -56,17 +66,22 @@ export default function DashboardPage() {
                 <Card className="min-h-[400px]">
                     <h3 className="text-lg font-bold mb-4 dark:text-white">Recent Transactions</h3>
                     <div className="space-y-4">
-                        {[1, 2, 3, 4, 5].map((i) => (
+                        {transactions.map((tx, i) => (
                             <div key={i} className="flex items-center justify-between pb-4 border-b border-gray-100 dark:border-gray-800 last:border-0 last:pb-0">
                                 <div>
-                                    <p className="font-medium dark:text-white">TRX-{Math.random().toString(36).slice(2, 8).toUpperCase()}</p>
-                                    <p className="text-xs text-gray-500">28 Dec 2025, 02:30 PM</p>
+                                    <p className="font-medium dark:text-white">{tx.id}</p>
+                                    <p className="text-xs text-gray-500">{tx.date}</p>
                                 </div>
-                                <div className={i % 2 === 0 ? "text-green-600" : "text-red-600"}>
-                                    {i % 2 === 0 ? "+" : "-"}₹{Math.floor(Math.random() * 5000)}
+                                <div className={tx.type === 'CREDIT' ? "text-green-600" : "text-red-600"}>
+                                    {tx.type === 'CREDIT' ? "+" : "-"}₹{tx.amount.toLocaleString()}
                                 </div>
                             </div>
                         ))}
+                        {transactions.length === 0 && (
+                            <div className="text-center py-8 text-gray-500">
+                                Loading transactions...
+                            </div>
+                        )}
                     </div>
                 </Card>
             </div>

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { SocketProvider } from "@/contexts/SocketContext";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -19,7 +20,9 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className="antialiased font-sans" suppressHydrationWarning>
         <ThemeProvider attribute="data-theme" defaultTheme="system" enableSystem>
-          {children}
+          <SocketProvider>
+            {children}
+          </SocketProvider>
         </ThemeProvider>
       </body>
     </html>

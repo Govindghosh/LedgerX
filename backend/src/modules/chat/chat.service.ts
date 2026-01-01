@@ -188,6 +188,8 @@ class ChatService {
         attachments?: any[],
         replyToId?: string
     ): Promise<IMessage> {
+        console.log(`[ChatService] Sending message - roomId: ${roomId}, senderId: ${senderId}`);
+
         // Verify sender is participant
         const room = await ChatRoom.findOne({
             _id: roomId,
@@ -195,6 +197,14 @@ class ChatService {
         });
 
         if (!room) {
+            // Debug: Check if room exists at all
+            const roomExists = await ChatRoom.findById(roomId);
+            console.error(`[ChatService] Authorization failed:`, {
+                roomId,
+                senderId,
+                roomExists: !!roomExists,
+                participants: roomExists?.participants?.map(p => p.toString()),
+            });
             throw new Error('Not authorized to send message to this room');
         }
 
@@ -443,6 +453,88 @@ class ChatService {
             .sort({ createdAt: -1 })
             .limit(limit)
             .lean();
+    }
+
+    // Pin message
+    async pinMessage(roomId: string, messageId: string, userId: string): Promise<boolean> {
+        const room = await ChatRoom.findOne({
+            _id: roomId,
+            participants: new mongoose.Types.ObjectId(userId)
+        });
+
+        if (!room) return false;
+
+        const message = await Message.findById(messageId);
+        if (!message || message.roomId.toString() !== roomId) return false;
+
+        if (!room.pinnedMessages.includes(message._id as mongoose.Types.ObjectId)) {
+            room.pinnedMessages.push(message._id as mongoose.Types.ObjectId);
+            await room.save();
+
+            socketService.sendToRoom(roomId, 'room:pin_update', {
+                roomId,
+                pinnedMessages: await Message.find({ _id: { $in: room.pinnedMessages } }).populate('senderId', 'name')
+            });
+
+            await this.sendSystemMessage(roomId, 'A message was pinned');
+        }
+
+        return true;
+    }
+
+    // Unpin message
+    async unpinMessage(roomId: string, messageId: string, userId: string): Promise<boolean> {
+        const room = await ChatRoom.findOne({
+            _id: roomId,
+            participants: new mongoose.Types.ObjectId(userId)
+        });
+
+        if (!room) return false;
+
+        room.pinnedMessages = room.pinnedMessages.filter(id => id.toString() !== messageId);
+        await room.save();
+
+        socketService.sendToRoom(roomId, 'room:pin_update', {
+            roomId,
+            pinnedMessages: await Message.find({ _id: { $in: room.pinnedMessages } }).populate('senderId', 'name')
+        });
+
+        return true;
+    }
+
+    // Forward message
+    async forwardMessage(userId: string, messageId: string, targetRoomIds: string[]): Promise<IMessage[]> {
+        const originalMessage = await Message.findById(messageId);
+        if (!originalMessage || originalMessage.isDeleted) {
+            throw new Error('Message not found');
+        }
+
+        const forwardedMessages: IMessage[] = [];
+
+        for (const roomId of targetRoomIds) {
+            // Verify access to target room
+            const room = await ChatRoom.findOne({
+                _id: roomId,
+                participants: new mongoose.Types.ObjectId(userId)
+            });
+
+            if (room) {
+                const newMessage = await this.sendMessage(
+                    roomId,
+                    userId,
+                    originalMessage.content,
+                    originalMessage.type,
+                    originalMessage.attachments,
+                    undefined // Forwarding doesn't keep reply link by default
+                );
+
+                // Mark as forwarded
+                await Message.findByIdAndUpdate(newMessage._id, { isForwarded: true });
+                forwardedMessages.push(newMessage);
+            }
+        }
+
+        return forwardedMessages;
     }
 
     // Get all users for starting new chat

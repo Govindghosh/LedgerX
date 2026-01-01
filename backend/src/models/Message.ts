@@ -22,6 +22,7 @@ export interface IMessage extends Document {
     }[];
     isEdited: boolean;
     editedAt?: Date;
+    isForwarded: boolean;
     isDeleted: boolean;
     deletedAt?: Date;
     metadata?: Record<string, any>;
@@ -77,6 +78,10 @@ const messageSchema = new Schema<IMessage>(
         },
         editedAt: {
             type: Date,
+        },
+        isForwarded: {
+            type: Boolean,
+            default: false,
         },
         isDeleted: {
             type: Boolean,

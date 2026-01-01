@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { upload } from '../../utils/fileUpload.js';
 import {
     getRooms,
     getOrCreateDirectChat,
@@ -15,6 +16,10 @@ import {
     getUnreadCounts,
     searchMessages,
     getAvailableUsers,
+    uploadFile,
+    pinMessage,
+    unpinMessage,
+    forwardMessage,
 } from './chat.controller.js';
 
 const router = Router();
@@ -59,6 +64,9 @@ router.get('/rooms/:roomId/messages', getMessages);
 // Send message
 router.post('/rooms/:roomId/messages', sendMessage);
 
+// Upload file
+router.post('/upload', upload.single('file'), uploadFile);
+
 // Mark room messages as read
 router.patch('/rooms/:roomId/read', markAsRead);
 
@@ -67,5 +75,14 @@ router.patch('/messages/:messageId', editMessage);
 
 // Delete message
 router.delete('/messages/:messageId', deleteMessage);
+
+// Pin message
+router.post('/rooms/:roomId/messages/:messageId/pin', pinMessage);
+
+// Unpin message
+router.delete('/rooms/:roomId/messages/:messageId/pin', unpinMessage);
+
+// Forward message
+router.post('/messages/:messageId/forward', forwardMessage);
 
 export default router;

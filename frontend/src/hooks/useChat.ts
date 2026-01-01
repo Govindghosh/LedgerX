@@ -34,6 +34,7 @@ interface ChatRoom {
     admins?: User[];
     lastMessage?: Message;
     lastMessageAt?: string;
+    pinnedMessages?: Message[];
     createdAt: string;
 }
 
@@ -47,9 +48,14 @@ interface UseChatReturn {
     typingUsers: string[];
     unreadCounts: Record<string, number>;
     setActiveRoom: (room: ChatRoom | null) => void;
-    sendMessage: (content: string, type?: 'TEXT' | 'IMAGE' | 'FILE') => Promise<void>;
+    sendMessage: (content: string, type?: 'TEXT' | 'IMAGE' | 'FILE', attachments?: Message['attachments'], replyToId?: string) => Promise<void>;
+    deleteMessage: (messageId: string) => Promise<void>;
+    uploadFile: (file: File) => Promise<any>;
     createDirectChat: (participantId: string) => Promise<ChatRoom>;
     createGroupChat: (name: string, participantIds: string[], description?: string) => Promise<ChatRoom>;
+    forwardMessage: (messageId: string, targetRoomIds: string[]) => Promise<void>;
+    pinMessage: (messageId: string) => Promise<void>;
+    unpinMessage: (messageId: string) => Promise<void>;
     loadMoreMessages: () => Promise<void>;
     markAsRead: () => Promise<void>;
     setTyping: (isTyping: boolean) => void;
@@ -126,8 +132,13 @@ export function useChat(): UseChatReturn {
         setHasMore(true);
         setTypingUsers([]);
 
-        if (room && socket) {
-            socket.emit('chat:join', room._id);
+        if (room) {
+            // Join socket room if connected
+            if (socket) {
+                socket.emit('chat:join', room._id);
+            }
+
+            // Always fetch messages, regardless of socket connection
             await fetchMessages(room._id, 1);
 
             // Clear unread count
@@ -144,22 +155,68 @@ export function useChat(): UseChatReturn {
     }, [activeRoom, hasMore, loading, page, fetchMessages]);
 
     // Send message
-    const sendMessage = useCallback(async (content: string, type: 'TEXT' | 'IMAGE' | 'FILE' = 'TEXT') => {
-        if (!activeRoom || !content.trim()) return;
+    const sendMessage = useCallback(async (content: string, type: 'TEXT' | 'IMAGE' | 'FILE' = 'TEXT', attachments?: Message['attachments'], replyToId?: string) => {
+        if (!activeRoom || (!content.trim() && !attachments)) return;
 
         try {
             setSendingMessage(true);
             const res = await api.post(`/chat/rooms/${activeRoom._id}/messages`, {
                 content,
-                type
+                type,
+                attachments,
+                replyToId
             });
-            // Message will be added via socket event
+
+            // Add message to state immediately (optimistic update)
+            const newMessage = res.data.data;
+            if (newMessage) {
+                setMessages(prev => {
+                    // Check if message already exists (from socket event)
+                    if (prev.find(m => m._id === newMessage._id)) {
+                        return prev;
+                    }
+                    return [...prev, newMessage];
+                });
+
+                // Update room's last message
+                setRooms(prevRooms => prevRooms.map(room => {
+                    if (room._id === activeRoom._id) {
+                        return { ...room, lastMessage: newMessage, lastMessageAt: newMessage.createdAt };
+                    }
+                    return room;
+                }));
+            }
         } catch (err: any) {
             setError(err.message);
         } finally {
             setSendingMessage(false);
         }
     }, [activeRoom]);
+
+    // Delete message
+    const deleteMessage = useCallback(async (messageId: string) => {
+        try {
+            await api.delete(`/chat/messages/${messageId}`);
+            // State update handled by socket event 'message:deleted'
+        } catch (err: any) {
+            setError(err.message);
+        }
+    }, []);
+
+    // Upload file
+    const uploadFile = useCallback(async (file: File) => {
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            const res = await api.post('/chat/upload', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            return res.data.data;
+        } catch (err: any) {
+            setError(err.message);
+            throw err;
+        }
+    }, []);
 
     // Create direct chat
     const createDirectChat = useCallback(async (participantId: string): Promise<ChatRoom> => {
@@ -194,6 +251,36 @@ export function useChat(): UseChatReturn {
             console.error('Failed to mark as read:', err);
         }
     }, [activeRoom]);
+
+    // Pin message
+    const pinMessage = useCallback(async (messageId: string) => {
+        if (!activeRoom) return;
+        try {
+            await api.post(`/chat/rooms/${activeRoom._id}/messages/${messageId}/pin`);
+        } catch (err: any) {
+            setError(err.message);
+        }
+    }, [activeRoom]);
+
+    // Unpin message
+    const unpinMessage = useCallback(async (messageId: string) => {
+        if (!activeRoom) return;
+        try {
+            await api.delete(`/chat/rooms/${activeRoom._id}/messages/${messageId}/pin`);
+        } catch (err: any) {
+            setError(err.message);
+        }
+    }, [activeRoom]);
+
+    // Forward message
+    const forwardMessage = useCallback(async (messageId: string, targetRoomIds: string[]) => {
+        try {
+            await api.post(`/chat/messages/${messageId}/forward`, { targetRoomIds });
+            await fetchRooms();
+        } catch (err: any) {
+            setError(err.message);
+        }
+    }, [fetchRooms]);
 
     // Set typing indicator
     const setTyping = useCallback((isTyping: boolean) => {
@@ -269,12 +356,12 @@ export function useChat(): UseChatReturn {
         };
 
         // Typing indicator handler
-        const handleTyping = ({ oderId, isTyping }: { oderId: string; isTyping: boolean }) => {
+        const handleTyping = ({ userId, isTyping }: { userId: string; isTyping: boolean }) => {
             setTypingUsers(prev => {
-                if (isTyping && !prev.includes(oderId)) {
-                    return [...prev, oderId];
+                if (isTyping && !prev.includes(userId)) {
+                    return [...prev, userId];
                 } else if (!isTyping) {
-                    return prev.filter(id => id !== oderId);
+                    return prev.filter(id => id !== userId);
                 }
                 return prev;
             });
@@ -290,11 +377,19 @@ export function useChat(): UseChatReturn {
             }
         };
 
+        // Pin update handler
+        const handlePinUpdate = ({ roomId, pinnedMessages }: { roomId: string; pinnedMessages: Message[] }) => {
+            if (activeRoom?._id === roomId) {
+                setActiveRoom(prev => prev ? { ...prev, pinnedMessages } : null);
+            }
+        };
+
         socket.on('message:new', handleNewMessage);
         socket.on('message:edited', handleMessageEdited);
         socket.on('message:deleted', handleMessageDeleted);
         socket.on('chat:typing', handleTyping);
         socket.on('messages:read', handleMessagesRead);
+        socket.on('room:pin_update', handlePinUpdate);
 
         return () => {
             socket.off('message:new', handleNewMessage);
@@ -302,6 +397,7 @@ export function useChat(): UseChatReturn {
             socket.off('message:deleted', handleMessageDeleted);
             socket.off('chat:typing', handleTyping);
             socket.off('messages:read', handleMessagesRead);
+            socket.off('room:pin_update', handlePinUpdate);
         };
     }, [socket, isConnected, activeRoom]);
 
@@ -321,6 +417,8 @@ export function useChat(): UseChatReturn {
         unreadCounts,
         setActiveRoom: handleSetActiveRoom,
         sendMessage,
+        deleteMessage,
+        uploadFile,
         createDirectChat,
         createGroupChat,
         loadMoreMessages,
@@ -328,5 +426,8 @@ export function useChat(): UseChatReturn {
         setTyping,
         fetchRooms,
         fetchAvailableUsers,
+        forwardMessage,
+        pinMessage,
+        unpinMessage,
     };
 }
