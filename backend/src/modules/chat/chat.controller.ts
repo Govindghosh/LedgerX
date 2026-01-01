@@ -16,7 +16,7 @@ export const getRooms = async (req: AuthRequest, res: Response) => {
         const userId = req.user!.userId;
         const rooms = await chatService.getUserRooms(userId);
 
-        res.json({
+        return res.json({
             success: true,
             data: rooms,
         });
@@ -50,7 +50,7 @@ export const getOrCreateDirectChat = async (req: AuthRequest, res: Response) => 
 
         const room = await chatService.getOrCreateDirectRoom(userId, participantId);
 
-        res.json({
+        return res.json({
             success: true,
             data: room,
         });
@@ -77,7 +77,7 @@ export const createGroupChat = async (req: AuthRequest, res: Response) => {
 
         const room = await chatService.createGroupRoom(userId, name, participantIds, description);
 
-        res.status(201).json({
+        return res.status(201).json({
             success: true,
             data: room,
         });
@@ -104,7 +104,7 @@ export const getRoom = async (req: AuthRequest, res: Response) => {
             });
         }
 
-        res.json({
+        return res.json({
             success: true,
             data: room,
         });
@@ -139,7 +139,7 @@ export const addParticipants = async (req: AuthRequest, res: Response) => {
             });
         }
 
-        res.json({
+        return res.json({
             success: true,
             data: room,
         });
@@ -166,7 +166,7 @@ export const removeParticipant = async (req: AuthRequest, res: Response) => {
             });
         }
 
-        res.json({
+        return res.json({
             success: true,
             message: 'Participant removed',
         });
@@ -193,7 +193,7 @@ export const leaveGroup = async (req: AuthRequest, res: Response) => {
             });
         }
 
-        res.json({
+        return res.json({
             success: true,
             message: 'Left the group',
         });
@@ -230,7 +230,7 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
             replyToId
         );
 
-        res.status(201).json({
+        return res.status(201).json({
             success: true,
             data: message,
         });
@@ -252,7 +252,7 @@ export const getMessages = async (req: AuthRequest, res: Response) => {
 
         const result = await chatService.getRoomMessages(roomId, userId, page, limit);
 
-        res.json({
+        return res.json({
             success: true,
             data: result.messages,
             pagination: result.pagination,
@@ -288,7 +288,7 @@ export const editMessage = async (req: AuthRequest, res: Response) => {
             });
         }
 
-        res.json({
+        return res.json({
             success: true,
             data: message,
         });
@@ -315,7 +315,7 @@ export const deleteMessage = async (req: AuthRequest, res: Response) => {
             });
         }
 
-        res.json({
+        return res.json({
             success: true,
             message: 'Message deleted',
         });
@@ -335,12 +335,12 @@ export const markAsRead = async (req: AuthRequest, res: Response) => {
 
         await chatService.markMessagesAsRead(roomId, userId);
 
-        res.json({
+        return res.json({
             success: true,
             message: 'Messages marked as read',
         });
     } catch (error: any) {
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: error.message || 'Failed to mark as read'
         });
@@ -353,7 +353,7 @@ export const getUnreadCounts = async (req: AuthRequest, res: Response) => {
         const userId = req.user!.userId;
         const counts = await chatService.getUnreadCount(userId);
 
-        res.json({
+        return res.json({
             success: true,
             data: counts,
         });
@@ -381,7 +381,7 @@ export const searchMessages = async (req: AuthRequest, res: Response) => {
 
         const messages = await chatService.searchMessages(userId, query, limit);
 
-        res.json({
+        return res.json({
             success: true,
             data: messages,
         });
@@ -399,7 +399,7 @@ export const getAvailableUsers = async (req: AuthRequest, res: Response) => {
         const userId = req.user!.userId;
         const users = await chatService.getAvailableUsers(userId);
 
-        res.json({
+        return res.json({
             success: true,
             data: users,
         });

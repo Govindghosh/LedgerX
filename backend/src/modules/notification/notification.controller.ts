@@ -16,13 +16,13 @@ export const getNotifications = async (req: AuthRequest, res: Response) => {
 
         const result = await notificationService.getUserNotifications(userId, page, limit, unreadOnly);
 
-        res.json({
+        return res.json({
             success: true,
             data: result.notifications,
             pagination: result.pagination,
         });
     } catch (error: any) {
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: error.message || 'Failed to fetch notifications'
         });
@@ -35,12 +35,12 @@ export const getUnreadCount = async (req: AuthRequest, res: Response) => {
         const userId = req.userId!;
         const count = await notificationService.getUnreadCount(userId);
 
-        res.json({
+        return res.json({
             success: true,
             data: { count },
         });
     } catch (error: any) {
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: error.message || 'Failed to fetch unread count'
         });
@@ -62,12 +62,12 @@ export const markAsRead = async (req: AuthRequest, res: Response) => {
             });
         }
 
-        res.json({
+        return res.json({
             success: true,
             data: notification,
         });
     } catch (error: any) {
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: error.message || 'Failed to mark notification as read'
         });
@@ -80,13 +80,13 @@ export const markAllAsRead = async (req: AuthRequest, res: Response) => {
         const userId = req.userId!;
         const count = await notificationService.markAllAsRead(userId);
 
-        res.json({
+        return res.json({
             success: true,
             message: `${count} notifications marked as read`,
             data: { count },
         });
     } catch (error: any) {
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: error.message || 'Failed to mark notifications as read'
         });
@@ -108,12 +108,12 @@ export const deleteNotification = async (req: AuthRequest, res: Response) => {
             });
         }
 
-        res.json({
+        return res.json({
             success: true,
             message: 'Notification deleted',
         });
     } catch (error: any) {
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: error.message || 'Failed to delete notification'
         });
@@ -126,13 +126,13 @@ export const deleteAllNotifications = async (req: AuthRequest, res: Response) =>
         const userId = req.userId!;
         const count = await notificationService.deleteAll(userId);
 
-        res.json({
+        return res.json({
             success: true,
             message: `${count} notifications deleted`,
             data: { count },
         });
     } catch (error: any) {
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: error.message || 'Failed to delete notifications'
         });

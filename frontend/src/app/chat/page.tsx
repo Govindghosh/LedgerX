@@ -87,6 +87,7 @@ export default function ChatPage() {
     const [messageToForward, setMessageToForward] = useState<any>(null);
     const [showRoomMenu, setShowRoomMenu] = useState(false);
     const [messageMenuOpen, setMessageMenuOpen] = useState<string | null>(null);
+    const [currentUser, setCurrentUser] = useState<any>({ id: '', name: '', email: '', role: '' });
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const messageInputRef = useRef<HTMLInputElement>(null);
@@ -99,11 +100,24 @@ export default function ChatPage() {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
 
-    // Handle mobile view
+    // Handle mobile view and initial user data
     useEffect(() => {
         const handleResize = () => setIsMobileView(window.innerWidth < 768);
         handleResize();
         window.addEventListener('resize', handleResize);
+
+        // Load current user from localStorage safely on client
+        if (typeof window !== 'undefined') {
+            const userData = localStorage.getItem('user');
+            if (userData) {
+                try {
+                    setCurrentUser(JSON.parse(userData));
+                } catch (e) {
+                    console.error('Failed to parse user data from localStorage', e);
+                }
+            }
+        }
+
         return () => window.removeEventListener('resize', handleResize);
     }, []);
 
@@ -253,7 +267,6 @@ export default function ChatPage() {
     // Get other participant in direct chat
     const getOtherParticipant = (room: typeof activeRoom) => {
         if (!room || room.type !== 'DIRECT') return null;
-        const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
         return room.participants.find(p => p._id !== currentUser.id);
     };
 
@@ -311,7 +324,7 @@ export default function ChatPage() {
         return false;
     });
 
-    const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+
 
     return (
         <DashboardLayout>

@@ -78,13 +78,13 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
         const accessToken = jwt.sign(
             { userId: user._id, role: user.role },
             config.JWT_SECRET,
-            { expiresIn: config.JWT_EXPIRES_IN }
+            { expiresIn: config.JWT_EXPIRES_IN as any }
         );
 
         const refreshToken = jwt.sign(
             { userId: user._id },
             config.JWT_REFRESH_SECRET,
-            { expiresIn: config.JWT_REFRESH_EXPIRES_IN }
+            { expiresIn: config.JWT_REFRESH_EXPIRES_IN as any }
         );
 
         user.lastLoginAt = new Date();

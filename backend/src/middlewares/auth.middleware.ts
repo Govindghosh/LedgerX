@@ -12,7 +12,8 @@ export interface AuthRequest extends Request {
 export const authMiddleware = (req: AuthRequest, res: Response, next: NextFunction) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ success: false, message: 'No token provided' });
+        res.status(401).json({ success: false, message: 'No token provided' });
+        return;
     }
 
     const token = authHeader.split(' ')[1];
@@ -25,18 +26,21 @@ export const authMiddleware = (req: AuthRequest, res: Response, next: NextFuncti
         };
         next();
     } catch (error) {
-        return res.status(401).json({ success: false, message: 'Invalid or expired token' });
+        res.status(401).json({ success: false, message: 'Invalid or expired token' });
+        return;
     }
 };
 
 export const checkRole = (roles: string[]) => {
     return (req: AuthRequest, res: Response, next: NextFunction) => {
         if (!req.user) {
-            return res.status(401).json({ success: false, message: 'Unauthorized' });
+            res.status(401).json({ success: false, message: 'Unauthorized' });
+            return;
         }
 
         if (!roles.includes(req.user.role)) {
-            return res.status(403).json({ success: false, message: 'Forbidden' });
+            res.status(403).json({ success: false, message: 'Forbidden' });
+            return;
         }
 
         next();
