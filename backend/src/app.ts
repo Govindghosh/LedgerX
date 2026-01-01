@@ -45,6 +45,10 @@ app.use(errorHandler);
 
 // Initialize Kafka
 const initializeKafka = async () => {
+    if (!config.KAFKA_ENABLED) {
+        console.log('ℹ️ Kafka is disabled via config. Skipping initialization.');
+        return;
+    }
     try {
         await kafkaService.initProducer();
 

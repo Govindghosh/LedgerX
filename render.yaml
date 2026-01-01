@@ -11,7 +11,18 @@ services:
         value: production
       - key: PORT
         value: 5000
+      - key: KAFKA_ENABLED
+        value: true
+      - key: KAFKA_BROKERS
+        value: ledgerx-kafka:9092
       # Add other backend env vars here or in the Render Dashboard
+
+  # Kafka Private Service
+  - type: pvt
+    name: ledgerx-kafka
+    env: docker
+    dockerContext: .
+    dockerfilePath: kafka.Dockerfile
 
   # Frontend Service
   - type: web
