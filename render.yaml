@@ -1,0 +1,25 @@
+services:
+  # Backend Service
+  - type: web
+    name: ledgerx-backend
+    env: node
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000
+      # Add other backend env vars here or in the Render Dashboard
+
+  # Frontend Service
+  - type: web
+    name: ledgerx-frontend
+    env: starter
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        value: https://ledgerx-backend.onrender.com/api/v1 # Update this after your first backend deploy
