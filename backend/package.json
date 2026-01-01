@@ -12,6 +12,9 @@
     "build": "tsc",
     "seed": "node --import tsx src/scripts/seed.ts"
   },
+  "overrides": {
+    "cloudinary": "^2.8.0"
+  },
   "keywords": [],
   "author": "Govind Ghosh",
   "license": "ISC",
