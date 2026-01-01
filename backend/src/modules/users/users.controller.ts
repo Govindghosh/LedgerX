@@ -1,9 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
-import User from '../../models/User';
-import Wallet from '../../models/Wallet';
-import { AppError } from '../../middlewares/error.middleware';
-import { logAction } from '../../utils/audit.helper';
-import { AuthRequest } from '../../middlewares/auth.middleware';
+import User from '../../models/User.js';
+import Wallet from '../../models/Wallet.js';
+import { AppError } from '../../middlewares/error.middleware.js';
+import { logAction } from '../../utils/audit.helper.js';
+import { AuthRequest } from '../../middlewares/auth.middleware.js';
 
 export const getUsers = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {

@@ -1,4 +1,4 @@
-import AuditLog from '../models/AuditLog';
+import AuditLog from '../models/AuditLog.js';
 import mongoose from 'mongoose';
 
 export async function logAction(

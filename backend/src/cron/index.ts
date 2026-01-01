@@ -1,7 +1,7 @@
 import cron from 'node-cron';
-import Transaction from '../models/Transaction';
-import ReportSnapshot from '../models/ReportSnapshot';
-import User from '../models/User';
+import Transaction from '../models/Transaction.js';
+import ReportSnapshot from '../models/ReportSnapshot.js';
+import User from '../models/User.js';
 
 export const startDailyReportJob = () => {
     // Every day at 00:05 AM

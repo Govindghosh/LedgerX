@@ -1,6 +1,6 @@
 import { Response, NextFunction } from 'express';
-import Transaction from '../../models/Transaction';
-import { AuthRequest } from '../../middlewares/auth.middleware';
+import Transaction from '../../models/Transaction.js';
+import { AuthRequest } from '../../middlewares/auth.middleware.js';
 
 export const getTransactions = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {

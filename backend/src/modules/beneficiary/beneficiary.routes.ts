@@ -5,9 +5,9 @@ import {
     getAllPendingBeneficiaries,
     approveBeneficiary,
     deleteBeneficiary,
-} from './beneficiary.controller';
-import { checkRole } from '../../middlewares/auth.middleware';
-import { upload } from '../../utils/fileUpload';
+} from './beneficiary.controller.js';
+import { checkRole } from '../../middlewares/auth.middleware.js';
+import { upload } from '../../utils/fileUpload.js';
 
 const router = Router();
 

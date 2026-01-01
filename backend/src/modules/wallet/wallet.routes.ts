@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import * as walletController from './wallet.controller';
-import { checkRole } from '../../middlewares/auth.middleware';
-import { upload } from '../../utils/fileUpload';
+import * as walletController from './wallet.controller.js';
+import { checkRole } from '../../middlewares/auth.middleware.js';
+import { upload } from '../../utils/fileUpload.js';
 
 const router = Router();
 

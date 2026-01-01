@@ -1,6 +1,6 @@
 import { Response, NextFunction } from 'express';
-import ReportSnapshot from '../../models/ReportSnapshot';
-import { AuthRequest } from '../../middlewares/auth.middleware';
+import ReportSnapshot from '../../models/ReportSnapshot.js';
+import { AuthRequest } from '../../middlewares/auth.middleware.js';
 
 export const getDailyReport = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {

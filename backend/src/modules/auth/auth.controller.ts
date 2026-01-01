@@ -2,11 +2,11 @@ import { Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
-import User from '../../models/User';
-import Wallet from '../../models/Wallet';
-import { config } from '../../config';
-import { AppError } from '../../middlewares/error.middleware';
-import { logAction } from '../../utils/audit.helper';
+import User from '../../models/User.js';
+import Wallet from '../../models/Wallet.js';
+import { config } from '../../config/index.js';
+import { AppError } from '../../middlewares/error.middleware.js';
+import { logAction } from '../../utils/audit.helper.js';
 
 const registerSchema = z.object({
     name: z.string().min(2),

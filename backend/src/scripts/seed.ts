@@ -1,8 +1,8 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcrypt';
-import { config } from '../config';
-import User from '../models/User';
-import Wallet from '../models/Wallet';
+import { config } from '../config/index.js';
+import User from '../models/User.js';
+import Wallet from '../models/Wallet.js';
 
 const demoData = {
     admin: {

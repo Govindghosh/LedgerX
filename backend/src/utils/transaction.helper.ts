@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
-import Wallet from '../models/Wallet';
-import Transaction from '../models/Transaction';
-import { AppError } from '../middlewares/error.middleware';
+import Wallet from '../models/Wallet.js';
+import Transaction from '../models/Transaction.js';
+import { AppError } from '../middlewares/error.middleware.js';
 
 export type TxType = 'CREDIT' | 'DEBIT' | 'ADJUSTMENT';
 
