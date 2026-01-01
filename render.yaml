@@ -3,6 +3,7 @@ services:
   - type: web
     name: ledgerx-backend
     env: node
+    plan: free
     rootDir: backend
     buildCommand: npm install && npm run build
     startCommand: npm start
@@ -12,25 +13,17 @@ services:
       - key: PORT
         value: 5000
       - key: KAFKA_ENABLED
-        value: true
-      - key: KAFKA_BROKERS
-        value: ledgerx-kafka:9092
-      # Add other backend env vars here or in the Render Dashboard
-
-  # Kafka Private Service
-  - type: pserv
-    name: ledgerx-kafka
-    env: docker
-    dockerContext: .
-    dockerfilePath: kafka.Dockerfile
+        value: false
+      # Add other backend env vars here (Mongo URI, etc.)
 
   # Frontend Service
   - type: web
     name: ledgerx-frontend
     env: node
+    plan: free
     rootDir: frontend
     buildCommand: npm install && npm run build
     startCommand: npm start
     envVars:
       - key: NEXT_PUBLIC_API_URL
-        value: https://ledgerx-backend.onrender.com/api/v1 # Update this after your first backend deploy
+        value: https://ledgerx-backend.onrender.com/api/v1
