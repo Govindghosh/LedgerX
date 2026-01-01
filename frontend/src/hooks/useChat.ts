@@ -4,13 +4,13 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSocket } from '../contexts/SocketContext';
 import api from '../lib/api';
 
-interface User {
+export interface User {
     _id: string;
     name: string;
     email: string;
 }
 
-interface Message {
+export interface Message {
     _id: string;
     roomId: string;
     senderId: User | string;
@@ -22,11 +22,12 @@ interface Message {
     readBy: { userId: string; readAt: string }[];
     isEdited: boolean;
     isDeleted: boolean;
+    isForwarded?: boolean;
     createdAt: string;
     updatedAt: string;
 }
 
-interface ChatRoom {
+export interface ChatRoom {
     _id: string;
     name?: string;
     type: 'DIRECT' | 'GROUP';
