@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response } from 'express';
 import { createServer } from 'http';
 import mongoose from 'mongoose';
 import cors from 'cors';
@@ -31,7 +31,7 @@ app.use(express.json());
 app.use('/api/v1', routes);
 
 // Health Check
-app.get('/health', (req, res) => {
+app.get('/health', (req: Request, res: Response) => {
     res.json({
         status: 'OK',
         timestamp: new Date(),

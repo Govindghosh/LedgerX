@@ -1,12 +1,6 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { chatService } from './chat.service.js';
-
-interface AuthRequest extends Request {
-    user?: {
-        userId: string;
-        role: string;
-    };
-}
+import { AuthRequest } from '../../middlewares/auth.middleware.js';
 
 // ============ ROOM ENDPOINTS ============
 

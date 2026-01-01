@@ -1,15 +1,11 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { notificationService } from './notification.service.js';
-
-interface AuthRequest extends Request {
-    userId?: string;
-    userRole?: string;
-}
+import { AuthRequest } from '../../middlewares/auth.middleware.js';
 
 // Get user notifications
 export const getNotifications = async (req: AuthRequest, res: Response) => {
     try {
-        const userId = req.userId!;
+        const userId = req.user!.userId;
         const page = parseInt(req.query.page as string) || 1;
         const limit = parseInt(req.query.limit as string) || 20;
         const unreadOnly = req.query.unreadOnly === 'true';
@@ -32,7 +28,7 @@ export const getNotifications = async (req: AuthRequest, res: Response) => {
 // Get unread count
 export const getUnreadCount = async (req: AuthRequest, res: Response) => {
     try {
-        const userId = req.userId!;
+        const userId = req.user!.userId;
         const count = await notificationService.getUnreadCount(userId);
 
         return res.json({
@@ -50,7 +46,7 @@ export const getUnreadCount = async (req: AuthRequest, res: Response) => {
 // Mark notification as read
 export const markAsRead = async (req: AuthRequest, res: Response) => {
     try {
-        const userId = req.userId!;
+        const userId = req.user!.userId;
         const { id } = req.params;
 
         const notification = await notificationService.markAsRead(id, userId);
@@ -77,7 +73,7 @@ export const markAsRead = async (req: AuthRequest, res: Response) => {
 // Mark all as read
 export const markAllAsRead = async (req: AuthRequest, res: Response) => {
     try {
-        const userId = req.userId!;
+        const userId = req.user!.userId;
         const count = await notificationService.markAllAsRead(userId);
 
         return res.json({
@@ -96,7 +92,7 @@ export const markAllAsRead = async (req: AuthRequest, res: Response) => {
 // Delete notification
 export const deleteNotification = async (req: AuthRequest, res: Response) => {
     try {
-        const userId = req.userId!;
+        const userId = req.user!.userId;
         const { id } = req.params;
 
         const deleted = await notificationService.delete(id, userId);
@@ -123,7 +119,7 @@ export const deleteNotification = async (req: AuthRequest, res: Response) => {
 // Delete all notifications
 export const deleteAllNotifications = async (req: AuthRequest, res: Response) => {
     try {
-        const userId = req.userId!;
+        const userId = req.user!.userId;
         const count = await notificationService.deleteAll(userId);
 
         return res.json({
