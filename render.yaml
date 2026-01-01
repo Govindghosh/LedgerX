@@ -18,7 +18,7 @@ services:
       # Add other backend env vars here or in the Render Dashboard
 
   # Kafka Private Service
-  - type: pvt
+  - type: pserv
     name: ledgerx-kafka
     env: docker
     dockerContext: .
@@ -27,7 +27,7 @@ services:
   # Frontend Service
   - type: web
     name: ledgerx-frontend
-    env: starter
+    env: node
     rootDir: frontend
     buildCommand: npm install && npm run build
     startCommand: npm start
