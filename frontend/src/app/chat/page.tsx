@@ -616,7 +616,7 @@ export default function ChatPage() {
                                         className="p-2 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 text-emerald-600"
                                         onClick={() => {
                                             const other = getOtherParticipant(activeRoom);
-                                            if (other) initiateCall(other._id, other.name, 'audio', activeRoom._id);
+                                            if (other) initiateCall(other._id, other.name, 'audio', activeRoom._id, currentUser.name);
                                             else toast.error('Calling is only available in direct chats');
                                         }}
                                         disabled={activeRoom?.type !== 'DIRECT'}
@@ -629,7 +629,7 @@ export default function ChatPage() {
                                         className="p-2 hover:bg-blue-50 dark:hover:bg-blue-500/10 text-blue-600"
                                         onClick={() => {
                                             const other = getOtherParticipant(activeRoom);
-                                            if (other) initiateCall(other._id, other.name, 'video', activeRoom._id);
+                                            if (other) initiateCall(other._id, other.name, 'video', activeRoom._id, currentUser.name);
                                             else toast.error('Calling is only available in direct chats');
                                         }}
                                         disabled={activeRoom?.type !== 'DIRECT'}

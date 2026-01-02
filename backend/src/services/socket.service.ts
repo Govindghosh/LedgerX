@@ -107,13 +107,12 @@ class SocketService {
             // ============ Call Signaling ============
 
             // Initiate a call
-            socket.on('call:initiate', ({ toUserId, type, roomId }: { toUserId: string; type: 'audio' | 'video'; roomId: string }) => {
-                const callerInfo = this.onlineUsers.get(socket.userId!);
+            socket.on('call:initiate', ({ toUserId, type, roomId, callerName }: { toUserId: string; type: 'audio' | 'video'; roomId: string; callerName?: string }) => {
                 console.log(`📞 Call initiate: ${socket.userId} -> ${toUserId} (${type})`);
 
                 socket.to(`user:${toUserId}`).emit('call:incoming', {
                     callerId: socket.userId,
-                    callerName: callerInfo?.userId, // We should ideally pass the name, but we can fetch it if needed
+                    callerName: callerName || socket.userId,
                     type,
                     roomId
                 });
