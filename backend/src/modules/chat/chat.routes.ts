@@ -20,6 +20,7 @@ import {
     pinMessage,
     unpinMessage,
     forwardMessage,
+    getAISuggestions,
 } from './chat.controller.js';
 
 const router = Router();
@@ -84,5 +85,8 @@ router.delete('/rooms/:roomId/messages/:messageId/pin', unpinMessage);
 
 // Forward message
 router.post('/messages/:messageId/forward', forwardMessage);
+
+// AI Suggestions
+router.get('/rooms/:roomId/suggestions', getAISuggestions);
 
 export default router;

@@ -62,6 +62,7 @@ interface UseChatReturn {
     setTyping: (isTyping: boolean) => void;
     fetchRooms: () => Promise<void>;
     fetchAvailableUsers: () => Promise<User[]>;
+    getAISuggestions: () => Promise<string[]>;
 }
 
 export function useChat(): UseChatReturn {
@@ -305,6 +306,18 @@ export function useChat(): UseChatReturn {
         return res.data.data || [];
     }, []);
 
+    // Get AI smart suggestions
+    const getAISuggestions = useCallback(async (): Promise<string[]> => {
+        if (!activeRoom) return [];
+        try {
+            const res = await api.get(`/chat/rooms/${activeRoom._id}/suggestions`);
+            return res.data.data || [];
+        } catch (err) {
+            console.error('Failed to get suggestions:', err);
+            return [];
+        }
+    }, [activeRoom]);
+
     // Socket event listeners
     useEffect(() => {
         if (!socket || !isConnected) return;
@@ -430,5 +443,6 @@ export function useChat(): UseChatReturn {
         forwardMessage,
         pinMessage,
         unpinMessage,
+        getAISuggestions,
     };
 }

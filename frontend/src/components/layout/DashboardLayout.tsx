@@ -125,7 +125,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
             {/* Main Content */}
             <div className="flex-1 flex flex-col h-full overflow-hidden">
                 {/* Topbar */}
-                <header className="h-16 bg-white/80 backdrop-blur-xl border-b border-gray-200 dark:bg-gray-900/80 dark:border-gray-800 flex items-center justify-between px-4 lg:px-8">
+                <header className="h-16 sticky top-0 bg-white/80 backdrop-blur-xl border-b border-gray-200 dark:bg-gray-900/80 dark:border-gray-800 flex items-center justify-between px-4 lg:px-8 z-50">
                     <button className="lg:hidden p-2 text-gray-600 dark:text-gray-400" onClick={() => setSidebarOpen(true)}>
                         <Menu className="w-6 h-6" />
                     </button>

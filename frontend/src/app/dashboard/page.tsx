@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { cn } from '@/lib/utils';
 import { Card } from '@/components/ui';
 import { Wallet, ArrowUpRight, ArrowDownRight, Users } from 'lucide-react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
@@ -89,9 +90,4 @@ export default function DashboardPage() {
     );
 }
 
-// Utility imported in Card component file but needed here too for local cn usage
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
-function cn(...inputs: ClassValue[]) {
-    return twMerge(clsx(inputs));
-}
+

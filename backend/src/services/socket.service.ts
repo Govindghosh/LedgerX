@@ -98,9 +98,57 @@ class SocketService {
             // Handle read receipts
             socket.on('message:read', ({ messageId, roomId }: { messageId: string; roomId: string }) => {
                 socket.to(`chat:${roomId}`).emit('message:read', {
-                    messageId,
                     readBy: socket.userId,
+                    messageId,
                     readAt: new Date(),
+                });
+            });
+
+            // ============ Call Signaling ============
+
+            // Initiate a call
+            socket.on('call:initiate', ({ toUserId, type, roomId }: { toUserId: string; type: 'audio' | 'video'; roomId: string }) => {
+                const callerInfo = this.onlineUsers.get(socket.userId!);
+                console.log(`📞 Call initiate: ${socket.userId} -> ${toUserId} (${type})`);
+
+                socket.to(`user:${toUserId}`).emit('call:incoming', {
+                    callerId: socket.userId,
+                    callerName: callerInfo?.userId, // We should ideally pass the name, but we can fetch it if needed
+                    type,
+                    roomId
+                });
+            });
+
+            // Respond to a call (accept/reject/busy)
+            socket.on('call:respond', ({ toUserId, response }: { toUserId: string; response: 'accepted' | 'rejected' | 'busy' }) => {
+                console.log(`📞 Call respond: ${socket.userId} -> ${toUserId} (${response})`);
+                socket.to(`user:${toUserId}`).emit('call:response', {
+                    fromUserId: socket.userId,
+                    response
+                });
+            });
+
+            // WebRTC Signaling (SDP Offer/Answer)
+            socket.on('call:signal', ({ toUserId, signal }: { toUserId: string; signal: any }) => {
+                socket.to(`user:${toUserId}`).emit('call:signal', {
+                    fromUserId: socket.userId,
+                    signal
+                });
+            });
+
+            // WebRTC ICE Candidates
+            socket.on('call:candidate', ({ toUserId, candidate }: { toUserId: string; candidate: any }) => {
+                socket.to(`user:${toUserId}`).emit('call:candidate', {
+                    fromUserId: socket.userId,
+                    candidate
+                });
+            });
+
+            // End a call
+            socket.on('call:end', ({ toUserId }: { toUserId: string }) => {
+                console.log(`📞 Call end: ${socket.userId} -> ${toUserId}`);
+                socket.to(`user:${toUserId}`).emit('call:end', {
+                    fromUserId: socket.userId
                 });
             });
 

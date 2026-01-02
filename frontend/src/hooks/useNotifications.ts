@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSocket } from '../contexts/SocketContext';
 import api from '../lib/api';
+import { toast } from 'sonner';
 
 interface Notification {
     _id: string;
@@ -58,11 +59,29 @@ export function useNotifications(): UseNotificationsReturn {
 
         const handleNewNotification = (notification: any) => {
             console.log('🔔 New notification received:', notification);
-            setNotifications(prev => [{
-                _id: notification.id || Date.now().toString(),
-                ...notification,
-                isRead: false,
-            }, ...prev]);
+
+            // Show toast in front
+            toast.info(notification.title, {
+                description: notification.message,
+                duration: 5000,
+            });
+
+            setNotifications(prev => {
+                const id = notification._id || notification.id || `temp-${Date.now()}-${Math.random()}`;
+                // Prevent duplicates
+                if (prev.find(n => n._id === id)) return prev;
+
+                return [{
+                    _id: id,
+                    type: notification.type,
+                    title: notification.title,
+                    message: notification.message,
+                    data: notification.data,
+                    isRead: false,
+                    createdAt: notification.createdAt || new Date().toISOString(),
+                }, ...prev];
+            });
+
             setUnreadCount(prev => prev + 1);
         };
 

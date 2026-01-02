@@ -6,6 +6,7 @@ import { kafkaService } from '../../services/kafka.service.js';
 import { socketService } from '../../services/socket.service.js';
 import { kafkaConfig } from '../../config/kafka.config.js';
 import { notificationService } from '../notification/notification.service.js';
+import { generateSmartSuggestions } from '../../utils/ai.js';
 
 class ChatService {
     // ============ ROOM MANAGEMENT ============
@@ -537,7 +538,7 @@ class ChatService {
         return forwardedMessages;
     }
 
-    // Get all users for starting new chat
+    // Get available users for starting new chat
     async getAvailableUsers(currentUserId: string) {
         return User.find({
             _id: { $ne: new mongoose.Types.ObjectId(currentUserId) },
@@ -546,6 +547,50 @@ class ChatService {
             .select('name email role')
             .sort({ name: 1 })
             .lean();
+    }
+
+    // Get AI smart suggestions for a room
+    async getAISuggestions(roomId: string, userId: string): Promise<string[]> {
+        // Verify user is participant
+        const room = await ChatRoom.findOne({
+            _id: roomId,
+            participants: new mongoose.Types.ObjectId(userId),
+        });
+
+        if (!room) {
+            throw new Error('Not authorized to get suggestions for this room');
+        }
+
+        // Get last 5 messages for context
+        const lastMessages = await Message.find({
+            roomId: new mongoose.Types.ObjectId(roomId),
+            isDeleted: false,
+        })
+            .populate('senderId', 'name')
+            .sort({ createdAt: -1 })
+            .limit(5)
+            .lean();
+
+        if (lastMessages.length === 0) return [];
+
+        const latestMsg = lastMessages[0];
+
+        // If the latest message is from the current user, we don't necessarily need suggestions
+        // unless we want to suggest "Thank you" etc. but usually it's for replying to others.
+        // However, we'll let the AI decide or just provide them.
+
+        const contextStr = lastMessages
+            .slice(1)
+            .reverse()
+            .map(m => `${(m.senderId as any)?.name || 'User'}: ${m.content}`)
+            .join('\n');
+
+        const roomInfo = room.type === 'GROUP'
+            ? `Group: ${room.name}, Description: ${room.description || 'N/A'}`
+            : 'Direct Chat';
+
+        const suggestions = await generateSmartSuggestions(contextStr, latestMsg.content, roomInfo);
+        return suggestions;
     }
 }
 

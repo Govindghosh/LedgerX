@@ -3,6 +3,8 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { SocketProvider } from "@/contexts/SocketContext";
+import { CallProvider } from '@/contexts/CallContext';
+import { Toaster } from 'sonner';
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -21,7 +23,10 @@ export default function RootLayout({
       <body className="antialiased font-sans" suppressHydrationWarning>
         <ThemeProvider attribute="data-theme" defaultTheme="system" enableSystem>
           <SocketProvider>
-            {children}
+            <CallProvider>
+              {children}
+              <Toaster richColors position="top-right" />
+            </CallProvider>
           </SocketProvider>
         </ThemeProvider>
       </body>

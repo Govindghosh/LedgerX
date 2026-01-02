@@ -5,6 +5,7 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, Button, Modal, cn } from '@/components/ui';
 import { useChat } from '@/hooks/useChat';
 import { useSocket } from '@/contexts/SocketContext';
+import { useCall } from '@/contexts/CallContext';
 import {
     MessageSquare,
     Send,
@@ -36,6 +37,7 @@ import {
 } from 'lucide-react';
 import EmojiPicker, { Theme as EmojiTheme } from 'emoji-picker-react';
 import { useTheme } from 'next-themes';
+import { toast } from 'sonner';
 
 interface ChatUser {
     _id: string;
@@ -64,7 +66,13 @@ export default function ChatPage() {
         pinMessage,
         unpinMessage,
         forwardMessage,
+        getAISuggestions,
     } = useChat();
+
+    const { initiateCall, endCall } = useCall();
+
+    const [suggestions, setSuggestions] = useState<string[]>([]);
+    const [fetchingSuggestions, setFetchingSuggestions] = useState(false);
 
     const { isConnected, onlineUsers } = useSocket();
     const { theme } = useTheme();
@@ -98,7 +106,28 @@ export default function ChatPage() {
     // Scroll to bottom when new messages arrive
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages]);
+
+        // Fetch AI suggestions if last message is from someone else
+        const lastMsg = messages[messages.length - 1];
+        if (lastMsg && typeof lastMsg.senderId === 'object' && lastMsg.senderId._id !== currentUser.id) {
+            fetchSuggestions();
+        } else {
+            setSuggestions([]);
+        }
+    }, [messages, currentUser.id]);
+
+    const fetchSuggestions = async () => {
+        if (!activeRoom) return;
+        setFetchingSuggestions(true);
+        try {
+            const data = await getAISuggestions();
+            setSuggestions(data);
+        } catch (err) {
+            console.error('Suggestions error:', err);
+        } finally {
+            setFetchingSuggestions(false);
+        }
+    };
 
     // Handle mobile view and initial user data
     useEffect(() => {
@@ -267,7 +296,8 @@ export default function ChatPage() {
     // Get other participant in direct chat
     const getOtherParticipant = (room: typeof activeRoom) => {
         if (!room || room.type !== 'DIRECT') return null;
-        return room.participants.find(p => p._id !== currentUser.id);
+        const currentUserId = currentUser._id || currentUser.id;
+        return room.participants.find(p => p._id !== currentUserId);
     };
 
     // Format time
@@ -580,10 +610,30 @@ export default function ChatPage() {
                                             Reconnecting...
                                         </span>
                                     )}
-                                    <Button variant="ghost" size="sm" className="p-2">
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="p-2 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 text-emerald-600"
+                                        onClick={() => {
+                                            const other = getOtherParticipant(activeRoom);
+                                            if (other) initiateCall(other._id, other.name, 'audio', activeRoom._id);
+                                            else toast.error('Calling is only available in direct chats');
+                                        }}
+                                        disabled={activeRoom?.type !== 'DIRECT'}
+                                    >
                                         <Phone className="w-5 h-5" />
                                     </Button>
-                                    <Button variant="ghost" size="sm" className="p-2">
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="p-2 hover:bg-blue-50 dark:hover:bg-blue-500/10 text-blue-600"
+                                        onClick={() => {
+                                            const other = getOtherParticipant(activeRoom);
+                                            if (other) initiateCall(other._id, other.name, 'video', activeRoom._id);
+                                            else toast.error('Calling is only available in direct chats');
+                                        }}
+                                        disabled={activeRoom?.type !== 'DIRECT'}
+                                    >
                                         <Video className="w-5 h-5" />
                                     </Button>
                                     <div className="relative" ref={roomMenuRef}>
@@ -945,6 +995,40 @@ export default function ChatPage() {
 
                             {/* Message Input Area */}
                             <div className="flex-shrink-0 p-4 sm:p-6 bg-white/20 dark:bg-slate-900/40 backdrop-blur-3xl border-t border-gray-100 dark:border-slate-800/50 z-20">
+                                {/* AI Suggestions */}
+                                {suggestions.length > 0 && (
+                                    <div className="mb-4 flex flex-wrap gap-2 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                        <div className="w-full flex items-center gap-2 mb-1 px-1">
+                                            <div className="text-[10px] font-black text-blue-500/70 uppercase tracking-widest flex items-center gap-1.5">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                                                Smart Suggestions
+                                            </div>
+                                        </div>
+                                        {suggestions.map((suggestion, idx) => (
+                                            <button
+                                                key={idx}
+                                                onClick={() => {
+                                                    setMessageInput(suggestion);
+                                                    setSuggestions([]);
+                                                }}
+                                                className="px-4 py-2 bg-white/80 dark:bg-slate-800/80 hover:bg-blue-50 dark:hover:bg-blue-500/20 
+                                                         border border-gray-100 dark:border-slate-700/50 rounded-2xl text-xs font-semibold
+                                                         text-gray-700 dark:text-slate-200 transition-all active:scale-95 shadow-sm
+                                                         hover:border-blue-500/30 hover:shadow-md hover:shadow-blue-500/5"
+                                            >
+                                                {suggestion}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                                {fetchingSuggestions && suggestions.length === 0 && (
+                                    <div className="mb-4 flex gap-2 animate-in fade-in duration-300">
+                                        {[1, 2, 3].map(i => (
+                                            <div key={i} className="h-8 w-24 bg-gray-100 dark:bg-slate-800/50 rounded-2xl animate-pulse" />
+                                        ))}
+                                    </div>
+                                )}
+
                                 {replyingTo && (
                                     <div className="mb-4 p-3 bg-blue-50/80 dark:bg-blue-500/10 border-l-4 border-blue-500 rounded-xl flex items-center justify-between animate-in slide-in-from-bottom-2 duration-200">
                                         <div className="flex-1 min-w-0">

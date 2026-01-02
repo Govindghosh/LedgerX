@@ -516,3 +516,23 @@ export const forwardMessage = async (req: AuthRequest, res: Response) => {
     }
 };
 
+// Get AI suggestions for reply
+export const getAISuggestions = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user!.userId;
+        const { roomId } = req.params;
+
+        const suggestions = await chatService.getAISuggestions(roomId, userId);
+
+        return res.json({
+            success: true,
+            data: suggestions,
+        });
+    } catch (error: any) {
+        return res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to get AI suggestions'
+        });
+    }
+};
+
