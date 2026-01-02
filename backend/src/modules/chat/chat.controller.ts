@@ -536,3 +536,21 @@ export const getAISuggestions = async (req: AuthRequest, res: Response) => {
     }
 };
 
+// Get call logs
+export const getCallLogs = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user!.userId;
+        const logs = await chatService.getCallLogs(userId);
+
+        return res.json({
+            success: true,
+            data: logs,
+        });
+    } catch (error: any) {
+        return res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to fetch call logs'
+        });
+    }
+};
+

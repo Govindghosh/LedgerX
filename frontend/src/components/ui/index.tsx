@@ -48,18 +48,20 @@ export const Modal = ({
     isOpen,
     onClose,
     title,
-    children
+    children,
+    className
 }: {
     isOpen: boolean;
     onClose: () => void;
     title: string;
     children: React.ReactNode;
+    className?: string;
 }) => {
     if (!isOpen) return null;
 
     return (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className={cn("bg-white dark:bg-gray-900 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200", className)}>
                 <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-800">
                     <h3 className="text-xl font-bold dark:text-white">{title}</h3>
                     <button

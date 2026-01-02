@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import ChatRoom, { IChatRoom, ChatRoomType } from '../../models/ChatRoom.js';
 import Message, { IMessage, MessageType } from '../../models/Message.js';
 import User from '../../models/User.js';
+import CallLog from '../../models/CallLog.js';
 import { kafkaService } from '../../services/kafka.service.js';
 import { socketService } from '../../services/socket.service.js';
 import { kafkaConfig } from '../../config/kafka.config.js';
@@ -23,7 +24,7 @@ class ChatService {
                 ],
                 $size: 2,
             },
-        }).populate('participants', 'name email');
+        }).populate('participants', 'name email profilePicture');
 
         if (existingRoom) {
             return existingRoom;
@@ -40,7 +41,7 @@ class ChatService {
         });
 
         return ChatRoom.findById(room._id)
-            .populate('participants', 'name email') as Promise<IChatRoom>;
+            .populate('participants', 'name email profilePicture') as Promise<IChatRoom>;
     }
 
     // Create group chat room
@@ -76,8 +77,8 @@ class ChatService {
         }
 
         return ChatRoom.findById(room._id)
-            .populate('participants', 'name email')
-            .populate('admins', 'name email') as Promise<IChatRoom>;
+            .populate('participants', 'name email profilePicture')
+            .populate('admins', 'name email profilePicture') as Promise<IChatRoom>;
     }
 
     // Get user's chat rooms
@@ -86,7 +87,7 @@ class ChatService {
             participants: new mongoose.Types.ObjectId(userId),
             isActive: true,
         })
-            .populate('participants', 'name email')
+            .populate('participants', 'name email profilePicture')
             .populate('lastMessage')
             .sort({ lastMessageAt: -1 })
             .lean();
@@ -98,8 +99,8 @@ class ChatService {
             _id: roomId,
             participants: new mongoose.Types.ObjectId(userId),
         })
-            .populate('participants', 'name email')
-            .populate('admins', 'name email');
+            .populate('participants', 'name email profilePicture')
+            .populate('admins', 'name email profilePicture');
 
         return room;
     }
@@ -124,8 +125,8 @@ class ChatService {
         await this.sendSystemMessage(roomId, `${participantIds.length} members added to the group`);
 
         return ChatRoom.findById(roomId)
-            .populate('participants', 'name email')
-            .populate('admins', 'name email');
+            .populate('participants', 'name email profilePicture')
+            .populate('admins', 'name email profilePicture');
     }
 
     // Remove participant from group
@@ -226,7 +227,7 @@ class ChatService {
 
         // Populate sender info
         const populatedMessage = await Message.findById(message._id)
-            .populate('senderId', 'name email')
+            .populate('senderId', 'name email profilePicture')
             .populate('replyTo');
 
         // Send via Kafka
@@ -304,7 +305,7 @@ class ChatService {
                 roomId: new mongoose.Types.ObjectId(roomId),
                 isDeleted: false,
             })
-                .populate('senderId', 'name email')
+                .populate('senderId', 'name email profilePicture')
                 .populate('replyTo')
                 .sort({ createdAt: -1 })
                 .skip((page - 1) * limit)
@@ -341,7 +342,7 @@ class ChatService {
                 editedAt: new Date(),
             },
             { new: true }
-        ).populate('senderId', 'name email');
+        ).populate('senderId', 'name email profilePicture');
 
         if (message) {
             socketService.sendToRoom(message.roomId.toString(), 'message:edited', {
@@ -379,7 +380,6 @@ class ChatService {
         return false;
     }
 
-    // Mark messages as read
     async markMessagesAsRead(roomId: string, userId: string): Promise<void> {
         await Message.updateMany(
             {
@@ -388,6 +388,7 @@ class ChatService {
                 'readBy.userId': { $ne: new mongoose.Types.ObjectId(userId) },
             },
             {
+                $set: { status: 'READ' },
                 $push: {
                     readBy: {
                         userId: new mongoose.Types.ObjectId(userId),
@@ -401,6 +402,26 @@ class ChatService {
             roomId,
             readBy: userId,
             readAt: new Date(),
+        });
+    }
+
+    // Mark messages as delivered
+    async markMessagesAsDelivered(roomId: string, userId: string): Promise<void> {
+        await Message.updateMany(
+            {
+                roomId: new mongoose.Types.ObjectId(roomId),
+                senderId: { $ne: new mongoose.Types.ObjectId(userId) },
+                status: 'SENT',
+            },
+            {
+                $set: { status: 'DELIVERED' }
+            }
+        );
+
+        socketService.sendToRoom(roomId, 'messages:delivered', {
+            roomId,
+            deliveredTo: userId,
+            deliveredAt: new Date(),
         });
     }
 
@@ -449,7 +470,7 @@ class ChatService {
             content: { $regex: query, $options: 'i' },
             isDeleted: false,
         })
-            .populate('senderId', 'name email')
+            .populate('senderId', 'name email profilePicture')
             .populate('roomId', 'name type')
             .sort({ createdAt: -1 })
             .limit(limit)
@@ -544,7 +565,7 @@ class ChatService {
             _id: { $ne: new mongoose.Types.ObjectId(currentUserId) },
             isActive: true,
         })
-            .select('name email role')
+            .select('name email role profilePicture')
             .sort({ name: 1 })
             .lean();
     }
@@ -591,6 +612,22 @@ class ChatService {
 
         const suggestions = await generateSmartSuggestions(contextStr, latestMsg.content, roomInfo);
         return suggestions;
+    }
+
+    // ============ CALL LOGS ============
+
+    async getCallLogs(userId: string) {
+        return CallLog.find({
+            $or: [
+                { caller: new mongoose.Types.ObjectId(userId) },
+                { receiver: new mongoose.Types.ObjectId(userId) }
+            ]
+        })
+            .populate('caller', 'name email profilePicture')
+            .populate('receiver', 'name email profilePicture')
+            .sort({ createdAt: -1 })
+            .limit(50)
+            .lean();
     }
 }
 

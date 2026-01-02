@@ -5,6 +5,9 @@ export interface IUser extends Document {
   email: string;
   passwordHash: string;
   role: 'ADMIN' | 'MANAGER' | 'USER';
+  profilePicture?: string;
+  bio?: string;
+  phoneNumber?: string;
   isActive: boolean;
   lastLoginAt?: Date;
   createdAt: Date;
@@ -22,6 +25,9 @@ const UserSchema: Schema = new Schema(
       default: 'USER',
       index: true,
     },
+    profilePicture: { type: String },
+    bio: { type: String },
+    phoneNumber: { type: String },
     isActive: { type: Boolean, default: true },
     lastLoginAt: { type: Date },
   },

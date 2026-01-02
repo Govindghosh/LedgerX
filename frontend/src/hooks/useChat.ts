@@ -8,6 +8,9 @@ export interface User {
     _id: string;
     name: string;
     email: string;
+    profilePicture?: string;
+    bio?: string;
+    phoneNumber?: string;
 }
 
 export interface Message {
@@ -21,8 +24,15 @@ export interface Message {
     replyTo?: Message;
     readBy: { userId: string; readAt: string }[];
     isEdited: boolean;
+    editedAt?: string;
     isDeleted: boolean;
     isForwarded?: boolean;
+    metadata?: {
+        callLogId?: string;
+        callStatus?: string;
+        callType?: string;
+        [key: string]: any;
+    };
     createdAt: string;
     updatedAt: string;
 }
@@ -39,6 +49,19 @@ export interface ChatRoom {
     createdAt: string;
 }
 
+export interface CallLog {
+    _id: string;
+    caller: User;
+    receiver: User;
+    type: 'audio' | 'video';
+    status: 'missed' | 'completed' | 'rejected' | 'busy' | 'ongoing';
+    startTime: string;
+    endTime?: string;
+    duration?: number;
+    roomId?: string;
+    createdAt: string;
+}
+
 interface UseChatReturn {
     rooms: ChatRoom[];
     activeRoom: ChatRoom | null;
@@ -51,6 +74,7 @@ interface UseChatReturn {
     setActiveRoom: (room: ChatRoom | null) => void;
     sendMessage: (content: string, type?: 'TEXT' | 'IMAGE' | 'FILE', attachments?: Message['attachments'], replyToId?: string) => Promise<void>;
     deleteMessage: (messageId: string) => Promise<void>;
+    editMessage: (messageId: string, content: string) => Promise<void>;
     uploadFile: (file: File) => Promise<any>;
     createDirectChat: (participantId: string) => Promise<ChatRoom>;
     createGroupChat: (name: string, participantIds: string[], description?: string) => Promise<ChatRoom>;
@@ -62,7 +86,9 @@ interface UseChatReturn {
     setTyping: (isTyping: boolean) => void;
     fetchRooms: () => Promise<void>;
     fetchAvailableUsers: () => Promise<User[]>;
+    fetchCallLogs: () => Promise<void>;
     getAISuggestions: () => Promise<string[]>;
+    callLogs: CallLog[];
 }
 
 export function useChat(): UseChatReturn {
@@ -75,8 +101,24 @@ export function useChat(): UseChatReturn {
     const [error, setError] = useState<string | null>(null);
     const [typingUsers, setTypingUsers] = useState<string[]>([]);
     const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+    const [callLogs, setCallLogs] = useState<CallLog[]>([]);
     const [page, setPage] = useState(1);
     const [hasMore, setHasMore] = useState(true);
+
+    // Refs for socket listeners
+    const activeRoomRef = useRef<ChatRoom | null>(activeRoom);
+    const currentUserRef = useRef<any>(null);
+
+    useEffect(() => {
+        activeRoomRef.current = activeRoom;
+    }, [activeRoom]);
+
+    useEffect(() => {
+        const userJson = localStorage.getItem('user');
+        if (userJson) {
+            currentUserRef.current = JSON.parse(userJson);
+        }
+    }, []);
     const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     // Fetch all rooms
@@ -205,6 +247,16 @@ export function useChat(): UseChatReturn {
         }
     }, []);
 
+    // Edit message
+    const editMessage = useCallback(async (messageId: string, content: string) => {
+        try {
+            await api.patch(`/chat/messages/${messageId}`, { content });
+            // State update handled by socket event 'message:updated'
+        } catch (err: any) {
+            setError(err.message);
+        }
+    }, []);
+
     // Upload file
     const uploadFile = useCallback(async (file: File) => {
         try {
@@ -306,6 +358,19 @@ export function useChat(): UseChatReturn {
         return res.data.data || [];
     }, []);
 
+    // Fetch call logs
+    const fetchCallLogs = useCallback(async () => {
+        try {
+            setLoading(true);
+            const res = await api.get('/chat/calls');
+            setCallLogs(res.data.data || []);
+        } catch (err: any) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
     // Get AI smart suggestions
     const getAISuggestions = useCallback(async (): Promise<string[]> => {
         if (!activeRoom) return [];
@@ -324,7 +389,12 @@ export function useChat(): UseChatReturn {
 
         // New message handler
         const handleNewMessage = ({ message, roomId }: { message: Message; roomId: string }) => {
-            if (activeRoom?._id === roomId) {
+            const isCurrentRoom = activeRoomRef.current?._id === roomId;
+            const isFromOthers = typeof message.senderId === 'object'
+                ? message.senderId._id !== currentUserRef.current?.id
+                : message.senderId !== currentUserRef.current?.id;
+
+            if (isCurrentRoom) {
                 setMessages(prev => [...prev, message]);
             } else {
                 // Increment unread count for other rooms
@@ -332,6 +402,11 @@ export function useChat(): UseChatReturn {
                     ...prev,
                     [roomId]: (prev[roomId] || 0) + 1,
                 }));
+            }
+
+            // Acknowledge delivery if message is from someone else
+            if (isFromOthers) {
+                socket.emit('message:delivered', { roomId });
             }
 
             // Update room's last message
@@ -383,17 +458,34 @@ export function useChat(): UseChatReturn {
 
         // Messages read handler
         const handleMessagesRead = ({ roomId, readBy }: { roomId: string; readBy: string }) => {
-            if (activeRoom?._id === roomId) {
-                setMessages(prev => prev.map(msg => ({
-                    ...msg,
-                    readBy: [...msg.readBy, { userId: readBy, readAt: new Date().toISOString() }],
-                })));
+            if (activeRoomRef.current?._id === roomId) {
+                setMessages(prev => prev.map(msg => {
+                    const isOtherSender = typeof msg.senderId === 'object' ? msg.senderId._id !== readBy : msg.senderId !== readBy;
+                    return {
+                        ...msg,
+                        status: isOtherSender ? 'READ' : msg.status,
+                        readBy: [...(msg.readBy || []), { userId: readBy, readAt: new Date().toISOString() }],
+                    };
+                }));
+            }
+        };
+
+        // Messages delivered handler
+        const handleMessagesDelivered = ({ roomId, deliveredTo }: { roomId: string; deliveredTo: string }) => {
+            if (activeRoomRef.current?._id === roomId) {
+                setMessages(prev => prev.map(msg => {
+                    const isOtherSender = typeof msg.senderId === 'object' ? msg.senderId._id !== deliveredTo : msg.senderId !== deliveredTo;
+                    if (isOtherSender && msg.status === 'SENT') {
+                        return { ...msg, status: 'DELIVERED' };
+                    }
+                    return msg;
+                }));
             }
         };
 
         // Pin update handler
         const handlePinUpdate = ({ roomId, pinnedMessages }: { roomId: string; pinnedMessages: Message[] }) => {
-            if (activeRoom?._id === roomId) {
+            if (activeRoomRef.current?._id === roomId) {
                 setActiveRoom(prev => prev ? { ...prev, pinnedMessages } : null);
             }
         };
@@ -403,6 +495,7 @@ export function useChat(): UseChatReturn {
         socket.on('message:deleted', handleMessageDeleted);
         socket.on('chat:typing', handleTyping);
         socket.on('messages:read', handleMessagesRead);
+        socket.on('messages:delivered', handleMessagesDelivered);
         socket.on('room:pin_update', handlePinUpdate);
 
         return () => {
@@ -432,6 +525,7 @@ export function useChat(): UseChatReturn {
         setActiveRoom: handleSetActiveRoom,
         sendMessage,
         deleteMessage,
+        editMessage,
         uploadFile,
         createDirectChat,
         createGroupChat,
@@ -444,5 +538,7 @@ export function useChat(): UseChatReturn {
         pinMessage,
         unpinMessage,
         getAISuggestions,
+        fetchCallLogs,
+        callLogs
     };
 }

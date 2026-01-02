@@ -38,12 +38,17 @@ import {
 import EmojiPicker, { Theme as EmojiTheme } from 'emoji-picker-react';
 import { useTheme } from 'next-themes';
 import { toast } from 'sonner';
+import { ProfileModal } from '@/components/chat/ProfileModal';
+import api from '@/lib/api';
 
 interface ChatUser {
     _id: string;
     name: string;
     email: string;
     role?: string;
+    profilePicture?: string;
+    bio?: string;
+    phoneNumber?: string;
 }
 
 export default function ChatPage() {
@@ -58,6 +63,7 @@ export default function ChatPage() {
         setActiveRoom,
         sendMessage,
         deleteMessage,
+        editMessage,
         uploadFile,
         createDirectChat,
         createGroupChat,
@@ -67,6 +73,8 @@ export default function ChatPage() {
         unpinMessage,
         forwardMessage,
         getAISuggestions,
+        callLogs,
+        fetchCallLogs
     } = useChat();
 
     const { initiateCall, endCall } = useCall();
@@ -95,7 +103,36 @@ export default function ChatPage() {
     const [messageToForward, setMessageToForward] = useState<any>(null);
     const [showRoomMenu, setShowRoomMenu] = useState(false);
     const [messageMenuOpen, setMessageMenuOpen] = useState<string | null>(null);
+    const [editingMessage, setEditingMessage] = useState<any>(null);
     const [currentUser, setCurrentUser] = useState<any>({ id: '', name: '', email: '', role: '' });
+    const [activeTab, setActiveTab] = useState<'CHATS' | 'CALLS'>('CHATS');
+    const [showProfileModal, setShowProfileModal] = useState(false);
+    const [viewingUser, setViewingUser] = useState<any>(null);
+    const [isViewingOwnProfile, setIsViewingOwnProfile] = useState(false);
+
+    // Handle view profile
+    const handleViewProfile = async (userId: string) => {
+        try {
+            console.log('[ChatPage] Opening profile for userId:', userId);
+            console.log('[ChatPage] Current user:', currentUser);
+
+            if (!userId) {
+                console.error('[ChatPage] No userId provided');
+                toast.error('Cannot view profile - user ID missing');
+                return;
+            }
+
+            const isOwn = userId === currentUser.id || userId === currentUser._id;
+            console.log('[ChatPage] Is own profile:', isOwn);
+
+            setIsViewingOwnProfile(isOwn);
+            setViewingUser({ _id: userId });
+            setShowProfileModal(true);
+        } catch (err) {
+            console.error('[ChatPage] Error in handleViewProfile:', err);
+            toast.error('Failed to load profile');
+        }
+    };
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const messageInputRef = useRef<HTMLInputElement>(null);
@@ -109,7 +146,7 @@ export default function ChatPage() {
 
         // Fetch AI suggestions if last message is from someone else
         const lastMsg = messages[messages.length - 1];
-        if (lastMsg && typeof lastMsg.senderId === 'object' && lastMsg.senderId._id !== currentUser.id) {
+        if (lastMsg && typeof lastMsg.senderId === 'object' && lastMsg.senderId?._id && lastMsg.senderId._id !== currentUser.id) {
             fetchSuggestions();
         } else {
             setSuggestions([]);
@@ -180,6 +217,14 @@ export default function ChatPage() {
         if ((!messageInput.trim() && !pendingAttachment) || sendingMessage) return;
 
         const content = messageInput.trim();
+
+        if (editingMessage) {
+            await editMessage(editingMessage._id, content);
+            setEditingMessage(null);
+            setMessageInput('');
+            return;
+        }
+
         const attachments = pendingAttachment ? [pendingAttachment] : undefined;
         const type = pendingAttachment
             ? (pendingAttachment.type.startsWith('image/') ? 'IMAGE' : 'FILE')
@@ -192,6 +237,19 @@ export default function ChatPage() {
 
         await sendMessage(content, type, attachments, replyingTo?._id);
         messageInputRef.current?.focus();
+    };
+
+    const handleStartEdit = (message: any) => {
+        setEditingMessage(message);
+        setMessageInput(message.content);
+        setReplyingTo(null);
+        setPendingAttachment(null);
+        messageInputRef.current?.focus();
+    };
+
+    const handleCancelEdit = () => {
+        setEditingMessage(null);
+        setMessageInput('');
     };
 
     // Handle reply
@@ -390,6 +448,37 @@ export default function ChatPage() {
                             </div>
                         </div>
 
+                        {/* Tab Switcher */}
+                        <div className="flex p-1 bg-gray-100 dark:bg-slate-800/50 rounded-xl">
+                            <button
+                                onClick={() => setActiveTab('CHATS')}
+                                className={cn(
+                                    "flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold uppercase tracking-widest transition-all rounded-lg",
+                                    activeTab === 'CHATS'
+                                        ? "bg-white dark:bg-slate-700 text-blue-500 shadow-sm"
+                                        : "text-gray-500 dark:text-slate-500 hover:text-gray-700 dark:hover:text-slate-300"
+                                )}
+                            >
+                                <MessageSquare className="w-4 h-4" />
+                                Chats
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setActiveTab('CALLS');
+                                    fetchCallLogs();
+                                }}
+                                className={cn(
+                                    "flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold uppercase tracking-widest transition-all rounded-lg",
+                                    activeTab === 'CALLS'
+                                        ? "bg-white dark:bg-slate-700 text-blue-500 shadow-sm"
+                                        : "text-gray-500 dark:text-slate-500 hover:text-gray-700 dark:hover:text-slate-300"
+                                )}
+                            >
+                                <Phone className="w-4 h-4" />
+                                Calls
+                            </button>
+                        </div>
+
                         {/* Search */}
                         <div className="relative">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-slate-500" />
@@ -405,100 +494,126 @@ export default function ChatPage() {
                         </div>
                     </div>
 
-                    {/* Room List */}
+                    {/* List Content */}
                     <div className="flex-1 overflow-y-auto scrollbar-hide lg:scrollbar-default">
-                        <div className="flex flex-col">
-                            {loading && rooms.length === 0 ? (
-                                <div className="flex items-center justify-center py-12">
-                                    <div className="w-8 h-8 border-3 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
-                                </div>
-                            ) : filteredRooms.length === 0 ? (
-                                <div className="flex flex-col items-center justify-center py-20 px-6 text-gray-500 dark:text-slate-500">
-                                    <div className="w-16 h-16 rounded-3xl bg-gray-100 dark:bg-slate-800/50 flex items-center justify-center mb-4">
-                                        <MessageSquare className="w-8 h-8 opacity-20" />
+                        {activeTab === 'CHATS' ? (
+                            <div className="flex flex-col">
+                                {loading && rooms.length === 0 ? (
+                                    <div className="flex items-center justify-center py-12">
+                                        <div className="w-8 h-8 border-3 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
                                     </div>
-                                    <p className="text-lg font-bold text-gray-900 dark:text-white">No chats yet</p>
-                                    <p className="text-sm text-center mt-1 opacity-60 italic">Reach out to your colleagues to start a conversation.</p>
-                                </div>
-                            ) : (
-                                filteredRooms.map(room => {
-                                    const otherUser = room.type === 'DIRECT' ? getOtherParticipant(room) : null;
-                                    const isOnline = isConnected && otherUser && onlineUsers.includes(otherUser._id);
-                                    const unread = unreadCounts[room._id] || 0;
-                                    const isActive = activeRoom?._id === room._id;
+                                ) : filteredRooms.length === 0 ? (
+                                    <div className="flex flex-col items-center justify-center py-20 px-6 text-gray-500 dark:text-slate-500">
+                                        <div className="w-16 h-16 rounded-3xl bg-gray-100 dark:bg-slate-800/50 flex items-center justify-center mb-4">
+                                            <MessageSquare className="w-8 h-8 opacity-20" />
+                                        </div>
+                                        <p className="text-lg font-bold text-gray-900 dark:text-white">No chats yet</p>
+                                        <p className="text-sm text-center mt-1 opacity-60 italic">Reach out to your colleagues to start a conversation.</p>
+                                    </div>
+                                ) : (
+                                    filteredRooms.map(room => {
+                                        const otherUser = room.type === 'DIRECT' ? getOtherParticipant(room) : null;
+                                        const isOnline = isConnected && otherUser && onlineUsers.includes(otherUser._id);
+                                        const unread = unreadCounts[room._id] || 0;
+                                        const isActive = activeRoom?._id === room._id;
 
-                                    return (
-                                        <div
-                                            key={room._id}
-                                            onClick={() => {
-                                                setActiveRoom(room);
-                                                if (isMobileView) setShowMobileSidebar(false);
-                                            }}
-                                            className={cn(
-                                                "group px-4 py-4 sm:px-6 cursor-pointer transition-all relative border-b border-gray-50 dark:border-slate-800/30",
-                                                isActive
-                                                    ? "bg-blue-50/50 dark:bg-blue-500/10"
-                                                    : "hover:bg-gray-50 dark:hover:bg-slate-800/20"
-                                            )}
-                                        >
-                                            {isActive && (
-                                                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-10 bg-blue-500 rounded-r-full" />
-                                            )}
+                                        return (
+                                            <div
+                                                key={room._id}
+                                                onClick={() => {
+                                                    setActiveRoom(room);
+                                                    if (isMobileView) setShowMobileSidebar(false);
+                                                }}
+                                                className={cn(
+                                                    "group px-4 py-4 sm:px-6 cursor-pointer transition-all relative border-b border-gray-50 dark:border-slate-800/30",
+                                                    isActive
+                                                        ? "bg-blue-50/50 dark:bg-blue-500/10"
+                                                        : "hover:bg-gray-50 dark:hover:bg-slate-800/20"
+                                                )}
+                                            >
+                                                {isActive && (
+                                                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-10 bg-blue-500 rounded-r-full" />
+                                                )}
 
-                                            <div className="flex items-center gap-4">
-                                                {/* Avatar */}
-                                                <div className="relative flex-shrink-0">
-                                                    <div className={cn(
-                                                        "w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center shadow-lg transition-transform group-hover:scale-105",
-                                                        room.type === 'DIRECT'
-                                                            ? "bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600"
-                                                            : "bg-gradient-to-br from-amber-500 to-orange-600"
-                                                    )}>
-                                                        {room.type === 'DIRECT' ? (
-                                                            <span className="text-white font-black text-xl">
-                                                                {otherUser?.name?.charAt(0).toUpperCase()}
-                                                            </span>
-                                                        ) : (
-                                                            <Users className="w-6 h-6 text-white" />
-                                                        )}
-                                                    </div>
-                                                    {isOnline && (
-                                                        <div className="absolute -bottom-1 -right-1 p-1 bg-white dark:bg-slate-900 rounded-full">
-                                                            <div className="w-3 h-3 bg-emerald-500 rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
+                                                <div className="flex items-center gap-4">
+                                                    {/* Avatar */}
+                                                    <div className="relative flex-shrink-0">
+                                                        <div
+                                                            onClick={(e) => {
+                                                                if (room.type === 'DIRECT' && otherUser) {
+                                                                    e.stopPropagation();
+                                                                    console.log('[ChatList] Clicked avatar for user:', otherUser);
+                                                                    handleViewProfile(otherUser._id);
+                                                                }
+                                                            }}
+                                                            className={cn(
+                                                                "w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center shadow-lg transition-transform group-hover:scale-105 overflow-hidden",
+                                                                room.type === 'DIRECT' && "cursor-pointer hover:ring-2 hover:ring-blue-500/50",
+                                                                room.type === 'DIRECT'
+                                                                    ? "bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600"
+                                                                    : "bg-gradient-to-br from-amber-500 to-orange-600"
+                                                            )}
+                                                        >
+                                                            {room.type === 'DIRECT' ? (
+                                                                otherUser?.profilePicture ? (
+                                                                    <img src={otherUser.profilePicture} alt={otherUser.name} className="w-full h-full object-cover" />
+                                                                ) : (
+                                                                    <span className="text-white font-black text-xl">
+                                                                        {otherUser?.name?.charAt(0).toUpperCase()}
+                                                                    </span>
+                                                                )
+                                                            ) : (
+                                                                <Users className="w-6 h-6 text-white" />
+                                                            )}
                                                         </div>
-                                                    )}
-                                                </div>
-
-                                                {/* Content */}
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center justify-between mb-1">
-                                                        <span className="font-bold text-gray-900 dark:text-white truncate text-base">
-                                                            {room.type === 'DIRECT' ? otherUser?.name : room.name}
-                                                        </span>
-                                                        <span className="text-[10px] sm:text-xs font-medium text-gray-500 dark:text-slate-500 whitespace-nowrap ml-2 uppercase">
-                                                            {room.lastMessageAt && formatTime(room.lastMessageAt)}
-                                                        </span>
-                                                    </div>
-                                                    <div className="flex items-center justify-between">
-                                                        <p className={cn(
-                                                            "text-sm truncate pr-2 transition-colors",
-                                                            unread > 0 ? "text-gray-900 dark:text-white font-bold" : "text-gray-500 dark:text-slate-400 font-medium"
-                                                        )}>
-                                                            {room.lastMessage?.content || 'Started a conversation'}
-                                                        </p>
-                                                        {unread > 0 && (
-                                                            <span className="flex-shrink-0 w-5 h-5 flex items-center justify-center text-[10px] font-black rounded-lg bg-blue-500 text-white shadow-lg shadow-blue-500/30">
-                                                                {unread}
-                                                            </span>
+                                                        {isOnline && (
+                                                            <div className="absolute -bottom-1 -right-1 p-1 bg-white dark:bg-slate-900 rounded-full">
+                                                                <div className="w-3 h-3 bg-emerald-500 rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
+                                                            </div>
                                                         )}
+                                                    </div>
+
+                                                    {/* Content */}
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center justify-between mb-1">
+                                                            <span className="font-bold text-gray-900 dark:text-white truncate text-base">
+                                                                {room.type === 'DIRECT' ? otherUser?.name : room.name}
+                                                            </span>
+                                                            <span className="text-[10px] sm:text-xs font-medium text-gray-500 dark:text-slate-500 whitespace-nowrap ml-2 uppercase">
+                                                                {room.lastMessageAt && formatTime(room.lastMessageAt)}
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex items-center justify-between">
+                                                            <p className={cn(
+                                                                "text-sm truncate pr-2 transition-colors",
+                                                                unread > 0 ? "text-gray-900 dark:text-white font-bold" : "text-gray-500 dark:text-slate-400 font-medium"
+                                                            )}>
+                                                                {room.lastMessage?.content || 'Started a conversation'}
+                                                            </p>
+                                                            {unread > 0 && (
+                                                                <span className="flex-shrink-0 w-5 h-5 flex items-center justify-center text-[10px] font-black rounded-lg bg-blue-500 text-white shadow-lg shadow-blue-500/30">
+                                                                    {unread}
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    );
-                                })
-                            )}
-                        </div>
+                                        );
+                                    })
+                                )}
+                            </div>
+                        ) : (
+                            <CallLogsList
+                                logs={callLogs}
+                                currentUserId={currentUser.id || currentUser._id}
+                                onCall={(userId, name, type) => {
+                                    const room = rooms.find(r => r.type === 'DIRECT' && r.participants.find(p => p._id === userId));
+                                    if (room) initiateCall(userId, name, type, room._id, currentUser.name);
+                                    else toast.error('Check your internet connection');
+                                }}
+                            />
+                        )}
                     </div>
 
                     {/* Create Group Button */}
@@ -567,15 +682,19 @@ export default function ChatPage() {
 
                                     <div className="relative group/avatar">
                                         <div className={cn(
-                                            "w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg group-hover/avatar:scale-105 transition-transform",
+                                            "w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg group-hover/avatar:scale-105 transition-transform overflow-hidden",
                                             activeRoom?.type === 'DIRECT'
                                                 ? "bg-gradient-to-br from-blue-500 to-indigo-600"
                                                 : "bg-gradient-to-br from-amber-500 to-orange-600"
                                         )}>
                                             {activeRoom?.type === 'DIRECT' ? (
-                                                <span className="text-white font-black text-xl">
-                                                    {getOtherParticipant(activeRoom)?.name?.charAt(0).toUpperCase()}
-                                                </span>
+                                                getOtherParticipant(activeRoom)?.profilePicture ? (
+                                                    <img src={getOtherParticipant(activeRoom)?.profilePicture} alt={getOtherParticipant(activeRoom)?.name} className="w-full h-full object-cover" />
+                                                ) : (
+                                                    <span className="text-white font-black text-xl">
+                                                        {getOtherParticipant(activeRoom)?.name?.charAt(0).toUpperCase()}
+                                                    </span>
+                                                )
                                             ) : (
                                                 <Users className="w-6 h-6 text-white" />
                                             )}
@@ -648,7 +767,14 @@ export default function ChatPage() {
 
                                         {showRoomMenu && (
                                             <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-gray-100 dark:border-slate-700 py-1 z-50 animate-in fade-in zoom-in-95 duration-100">
-                                                <button className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700/50 flex items-center gap-2">
+                                                <button
+                                                    onClick={() => {
+                                                        const other = getOtherParticipant(activeRoom);
+                                                        if (other) handleViewProfile(other._id);
+                                                        setShowRoomMenu(false);
+                                                    }}
+                                                    className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700/50 flex items-center gap-2"
+                                                >
                                                     <User className="w-4 h-4" />
                                                     View Profile
                                                 </button>
@@ -714,11 +840,38 @@ export default function ChatPage() {
                                             const isSystem = msg.type === 'SYSTEM';
 
                                             if (isSystem) {
+                                                const isCall = msg.metadata?.callLogId;
+                                                const callStatus = msg.metadata?.callStatus;
+                                                const callType = msg.metadata?.callType || 'audio';
+                                                const isMissed = callStatus === 'missed' || callStatus === 'rejected' || callStatus === 'busy';
+
                                                 return (
-                                                    <div key={msg._id} className="flex justify-center my-2">
-                                                        <span className="text-xs text-gray-500 dark:text-slate-500 italic">
-                                                            {msg.content}
-                                                        </span>
+                                                    <div key={msg._id} className="flex justify-center my-6">
+                                                        {isCall ? (
+                                                            <div className={cn(
+                                                                "flex items-center gap-3 px-4 py-2 rounded-2xl border backdrop-blur-md shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-300",
+                                                                isMissed
+                                                                    ? "bg-red-500/5 border-red-500/10 text-red-500/80"
+                                                                    : "bg-blue-500/5 border-blue-500/10 text-blue-500/80"
+                                                            )}>
+                                                                <div className={cn(
+                                                                    "p-2 rounded-xl",
+                                                                    isMissed ? "bg-red-500/10" : "bg-blue-500/10"
+                                                                )}>
+                                                                    {callType === 'video' ? <Video className="w-3 h-3" /> : <Phone className="w-3 h-3" />}
+                                                                </div>
+                                                                <div className="flex flex-col">
+                                                                    <p className="text-[11px] font-black uppercase tracking-widest">{msg.content}</p>
+                                                                    <p className="text-[9px] font-bold opacity-60 uppercase tracking-tighter">
+                                                                        {formatTime(msg.createdAt)}
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <span className="px-3 py-1 text-[10px] font-bold text-gray-500 dark:text-slate-500 italic bg-gray-100 dark:bg-slate-800/50 rounded-full uppercase tracking-tighter">
+                                                                {msg.content}
+                                                            </span>
+                                                        )}
                                                     </div>
                                                 );
                                             }
@@ -733,11 +886,18 @@ export default function ChatPage() {
                                                 >
                                                     {/* Avatar (for others) */}
                                                     {!isOwn && (
-                                                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-blue-600 
-                                                                      flex items-center justify-center flex-shrink-0 mt-auto shadow-sm border border-white/20">
-                                                            <span className="text-white text-[10px] font-bold">
-                                                                {sender?.name?.charAt(0).toUpperCase()}
-                                                            </span>
+                                                        <div
+                                                            onClick={() => handleViewProfile(sender?._id || (typeof msg.senderId === 'string' ? msg.senderId : msg.senderId._id))}
+                                                            className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-blue-600 
+                                                                      flex items-center justify-center flex-shrink-0 mt-auto shadow-sm border border-white/20 cursor-pointer hover:scale-110 transition-transform overflow-hidden"
+                                                        >
+                                                            {sender?.profilePicture ? (
+                                                                <img src={sender.profilePicture} alt={sender.name} className="w-full h-full object-cover" />
+                                                            ) : (
+                                                                <span className="text-white text-[10px] font-bold">
+                                                                    {sender?.name?.charAt(0).toUpperCase()}
+                                                                </span>
+                                                            )}
                                                         </div>
                                                     )}
 
@@ -823,6 +983,18 @@ export default function ChatPage() {
                                                                                     >
                                                                                         <Share2 className="w-3 h-3" />
                                                                                         Share
+                                                                                    </button>
+                                                                                )}
+                                                                                {isOwn && (
+                                                                                    <button
+                                                                                        onClick={() => {
+                                                                                            handleStartEdit(msg);
+                                                                                            setMessageMenuOpen(null);
+                                                                                        }}
+                                                                                        className="w-full text-left px-3 py-1.5 text-xs text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700/50 flex items-center gap-2"
+                                                                                    >
+                                                                                        <Edit3 className="w-3 h-3" />
+                                                                                        Edit Message
                                                                                     </button>
                                                                                 )}
                                                                             </div>
@@ -953,10 +1125,12 @@ export default function ChatPage() {
                                                                         )}>edited</span>
                                                                     )}
 
-                                                                    {isOwn && (
+                                                                    {isOwn && !isSystem && (
                                                                         <div className="flex -space-x-1 ml-0.5">
-                                                                            {msg.readBy.length > 0 ? (
+                                                                            {msg.status === 'READ' ? (
                                                                                 <CheckCheck className="w-3.5 h-3.5 text-blue-300 drop-shadow-sm" />
+                                                                            ) : msg.status === 'DELIVERED' ? (
+                                                                                <CheckCheck className="w-3.5 h-3.5 text-white/40" />
                                                                             ) : (
                                                                                 <Check className="w-3.5 h-3.5 text-white/40" />
                                                                             )}
@@ -1038,6 +1212,20 @@ export default function ChatPage() {
                                             </p>
                                         </div>
                                         <button onClick={() => setReplyingTo(null)} className="p-1.5 hover:bg-white dark:hover:bg-slate-800 rounded-lg text-gray-400">
+                                            <X className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                )}
+
+                                {editingMessage && (
+                                    <div className="mb-4 p-3 bg-amber-50/80 dark:bg-amber-500/10 border-l-4 border-amber-500 rounded-xl flex items-center justify-between animate-in slide-in-from-bottom-2 duration-200">
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-[10px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest mb-1">Editing message</p>
+                                            <p className="text-xs text-gray-700 dark:text-slate-300 truncate italic">
+                                                "{editingMessage.content}"
+                                            </p>
+                                        </div>
+                                        <button onClick={handleCancelEdit} className="p-1.5 hover:bg-white dark:hover:bg-slate-800 rounded-lg text-gray-400">
                                             <X className="w-4 h-4" />
                                         </button>
                                     </div>
@@ -1331,6 +1519,142 @@ export default function ChatPage() {
                     </div>
                 </div>
             </Modal>
+
+            {viewingUser && (
+                <ProfileModal
+                    isOpen={showProfileModal}
+                    onClose={() => setShowProfileModal(false)}
+                    userId={viewingUser._id}
+                    isOwnProfile={isViewingOwnProfile}
+                    onUpdate={() => {
+                        // Optionally refresh data
+                        const userData = localStorage.getItem('user');
+                        if (userData) {
+                            setCurrentUser(JSON.parse(userData));
+                        }
+                    }}
+                />
+            )}
         </DashboardLayout>
     );
 }
+
+const CallLogsList = ({ logs, currentUserId, onCall }: {
+    logs: any[],
+    currentUserId: string,
+    onCall: (userId: string, name: string, type: 'audio' | 'video') => void
+}) => {
+    const formatCallTime = (dateString: string) => {
+        const date = new Date(dateString);
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    };
+
+    const formatCallDuration = (seconds?: number) => {
+        if (!seconds) return '0s';
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+    };
+
+    if (logs.length === 0) {
+        return (
+            <div className="flex flex-col items-center justify-center py-20 px-6 text-gray-500 dark:text-slate-500">
+                <div className="w-16 h-16 rounded-3xl bg-gray-100 dark:bg-slate-800/50 flex items-center justify-center mb-4">
+                    <Phone className="w-8 h-8 opacity-20" />
+                </div>
+                <p className="text-lg font-bold text-gray-900 dark:text-white">No call history</p>
+                <p className="text-sm text-center mt-1 opacity-60">Your audio and video calls will appear here.</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="flex flex-col">
+            {logs.map(log => {
+                const isCaller = log.caller._id === currentUserId;
+                const otherUser = isCaller ? log.receiver : log.caller;
+                const isMissed = log.status === 'missed' || (log.status === 'rejected' && !isCaller);
+
+                return (
+                    <div
+                        key={log._id}
+                        className="group px-4 py-4 sm:px-6 hover:bg-gray-50 dark:hover:bg-slate-800/20 transition-all border-b border-gray-50 dark:border-slate-800/30 flex items-center gap-4"
+                    >
+                        {/* Status Icon */}
+                        <div className={cn(
+                            "w-12 h-12 rounded-2xl flex items-center justify-center shrink-0",
+                            isMissed ? "bg-red-500/10 text-red-500" : "bg-blue-500/10 text-blue-500"
+                        )}>
+                            {isCaller ? (
+                                <ArrowUpRight className="w-5 h-5 translate-x-0.5 -translate-y-0.5" />
+                            ) : (
+                                <ArrowDownLeft className={cn(
+                                    "w-5 h-5 -translate-x-0.5 translate-y-0.5",
+                                    isMissed && "text-red-500"
+                                )} />
+                            )}
+                        </div>
+
+                        {/* Info */}
+                        <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between mb-0.5">
+                                <h4 className="font-bold text-gray-900 dark:text-white truncate">
+                                    {otherUser.name}
+                                </h4>
+                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest whitespace-nowrap">
+                                    {formatCallTime(log.createdAt)}
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <p className={cn(
+                                    "text-xs font-semibold uppercase tracking-wider",
+                                    isMissed ? "text-red-500" : "text-gray-500 dark:text-slate-500"
+                                )}>
+                                    {isMissed ? 'Missed ' : (isCaller ? 'Outgoing ' : 'Incoming ')}
+                                    {log.type} Call
+                                </p>
+                                {log.duration > 0 && (
+                                    <>
+                                        <div className="w-1 h-1 bg-gray-300 dark:bg-slate-700 rounded-full" />
+                                        <p className="text-[10px] font-mono text-gray-400">{formatCallDuration(log.duration)}</p>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                                onClick={() => onCall(otherUser._id, otherUser.name, 'audio')}
+                                className="p-2.5 rounded-xl bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-400 hover:text-blue-500 hover:bg-blue-500/10 transition-all"
+                            >
+                                <Phone className="w-4 h-4" />
+                            </button>
+                            <button
+                                onClick={() => onCall(otherUser._id, otherUser.name, 'video')}
+                                className="p-2.5 rounded-xl bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-400 hover:text-blue-500 hover:bg-blue-500/10 transition-all"
+                            >
+                                <Video className="w-4 h-4" />
+                            </button>
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+};
+
+// New icons for Call Logs
+const ArrowUpRight = ({ className }: { className?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <line x1="7" y1="17" x2="17" y2="7"></line>
+        <polyline points="7 7 17 7 17 17"></polyline>
+    </svg>
+);
+
+const ArrowDownLeft = ({ className }: { className?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <line x1="17" y1="7" x2="7" y2="17"></line>
+        <polyline points="17 17 7 17 7 7"></polyline>
+    </svg>
+);

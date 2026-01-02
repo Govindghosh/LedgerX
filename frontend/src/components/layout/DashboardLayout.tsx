@@ -25,6 +25,8 @@ import { cn } from '@/components/ui';
 import { useTheme } from 'next-themes';
 import { SocketProvider, useSocket } from '@/contexts/SocketContext';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
+import { ProfileModal } from '@/components/chat/ProfileModal';
+import api from '@/lib/api';
 
 const navItems = [
     { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -41,15 +43,25 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [userRole, setUserRole] = useState<string>('');
     const [userName, setUserName] = useState<string>('');
+    const [userId, setUserId] = useState<string>('');
+    const [userAvatar, setUserAvatar] = useState<string | null>(null);
+    const [showProfileModal, setShowProfileModal] = useState(false);
+
     const pathname = usePathname();
     const { theme, setTheme } = useTheme();
     const router = useRouter();
     const { isConnected } = useSocket();
 
-    useEffect(() => {
+    const loadUserData = () => {
         const user = JSON.parse(localStorage.getItem('user') || '{}');
         setUserRole(user.role || 'USER');
         setUserName(user.name || 'User');
+        setUserId(user.id || user._id || '');
+        setUserAvatar(user.profilePicture || null);
+    };
+
+    useEffect(() => {
+        loadUserData();
     }, []);
 
     const handleLogout = () => {
@@ -163,9 +175,16 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                         </button>
 
                         {/* User Avatar */}
-                        <div className="flex items-center gap-2">
-                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white font-bold">
-                                {userName.charAt(0).toUpperCase()}
+                        <div
+                            className="flex items-center gap-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 p-1 rounded-xl transition-all"
+                            onClick={() => setShowProfileModal(true)}
+                        >
+                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white font-bold overflow-hidden">
+                                {userAvatar ? (
+                                    <img src={userAvatar} alt={userName} className="w-full h-full object-cover" />
+                                ) : (
+                                    userName.charAt(0).toUpperCase()
+                                )}
                             </div>
                             <div className="hidden sm:block">
                                 <p className="text-sm font-medium dark:text-white">{userName}</p>
@@ -188,6 +207,16 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                     {children}
                 </main>
             </div>
+
+            {userId && (
+                <ProfileModal
+                    isOpen={showProfileModal}
+                    onClose={() => setShowProfileModal(false)}
+                    userId={userId}
+                    isOwnProfile={true}
+                    onUpdate={loadUserData}
+                />
+            )}
         </div>
     );
 }

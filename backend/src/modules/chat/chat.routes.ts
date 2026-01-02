@@ -21,6 +21,7 @@ import {
     unpinMessage,
     forwardMessage,
     getAISuggestions,
+    getCallLogs,
 } from './chat.controller.js';
 
 const router = Router();
@@ -88,5 +89,8 @@ router.post('/messages/:messageId/forward', forwardMessage);
 
 // AI Suggestions
 router.get('/rooms/:roomId/suggestions', getAISuggestions);
+
+// Call logs
+router.get('/calls', getCallLogs);
 
 export default router;
