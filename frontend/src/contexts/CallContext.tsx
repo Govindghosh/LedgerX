@@ -89,13 +89,24 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         pc.ontrack = (event) => {
             console.log('📺 Received remote track:', event.track.kind);
-            if (event.streams && event.streams[0]) {
-                setRemoteStream(event.streams[0]);
-            } else {
-                console.log('📺 No stream in event, creating new MediaStream from track');
-                const newStream = new MediaStream([event.track]);
-                setRemoteStream(newStream);
-            }
+            setRemoteStream(prevStream => {
+                if (prevStream) {
+                    console.log('📺 Adding track to existing stream');
+                    // Check if track already exists to avoid duplicates
+                    if (!prevStream.getTracks().find(t => t.id === event.track.id)) {
+                        prevStream.addTrack(event.track);
+                    }
+                    return new MediaStream(prevStream.getTracks()); // Return new instance to trigger React update
+                }
+
+                if (event.streams && event.streams[0]) {
+                    console.log('📺 Using first stream from event');
+                    return event.streams[0];
+                }
+
+                console.log('📺 Creating new stream for first track');
+                return new MediaStream([event.track]);
+            });
         };
 
         pc.oniceconnectionstatechange = () => {
@@ -361,7 +372,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
 const CallOverlay: React.FC = () => {
     const { callStatus, callType, activeCallUser, endCall, localStream, remoteStream } = useCall();
     const localVideoRef = useRef<HTMLVideoElement>(null);
-    const remoteVideoRef = useRef<HTMLVideoElement>(null);
+    const remoteMediaRef = useRef<HTMLMediaElement>(null);
     const [duration, setDuration] = useState(0);
     const [isMuted, setIsMuted] = useState(false);
     const [isVideoOff, setIsVideoOff] = useState(false);
@@ -387,8 +398,17 @@ const CallOverlay: React.FC = () => {
     }, [localStream]);
 
     useEffect(() => {
-        if (remoteVideoRef.current && remoteStream) {
-            remoteVideoRef.current.srcObject = remoteStream;
+        if (remoteMediaRef.current && remoteStream) {
+            console.log('📺 Connecting stream to media element. Tracks:', remoteStream.getTracks().map(t => `${t.kind}:${t.enabled}`));
+            remoteMediaRef.current.srcObject = remoteStream;
+
+            // Explicitly play to handle some browser auto-play restrictions
+            const playPromise = remoteMediaRef.current.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(error => {
+                    console.error('❌ Remote media playback failed:', error);
+                });
+            }
         }
     }, [remoteStream]);
 
@@ -427,7 +447,7 @@ const CallOverlay: React.FC = () => {
                         {callType === 'video' ? (
                             remoteStream ? (
                                 <video
-                                    ref={remoteVideoRef}
+                                    ref={remoteMediaRef as React.RefObject<HTMLVideoElement>}
                                     autoPlay
                                     playsInline
                                     className="w-full h-full object-cover"
@@ -450,10 +470,14 @@ const CallOverlay: React.FC = () => {
                                 </div>
                                 <h2 className="mt-12 text-4xl font-black text-white tracking-tight">{activeCallUser?.name}</h2>
                                 {callStatus === 'connected' ? (
-                                    <div className="mt-4 px-4 py-1.5 bg-blue-500/20 border border-blue-500/20 rounded-full flex items-center gap-2">
-                                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
-                                        <span className="text-blue-400 font-mono font-bold text-sm tracking-widest">{formatDuration(duration)}</span>
-                                    </div>
+                                    <>
+                                        <div className="mt-4 px-4 py-1.5 bg-blue-500/20 border border-blue-500/20 rounded-full flex items-center gap-2">
+                                            <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+                                            <span className="text-blue-400 font-mono font-bold text-sm tracking-widest">{formatDuration(duration)}</span>
+                                        </div>
+                                        {/* Hidden audio element for voice playback */}
+                                        <audio ref={remoteMediaRef as React.RefObject<HTMLAudioElement>} autoPlay playsInline />
+                                    </>
                                 ) : (
                                     <p className="mt-4 text-blue-400 font-bold uppercase tracking-[0.4em] text-[10px] animate-pulse">
                                         {callStatus === 'outgoing' ? 'Connecting Secure Channel...' : 'Incoming Transmission...'}
